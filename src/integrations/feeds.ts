@@ -52,7 +52,7 @@ interface FeedDef<T> {
   after?: (data: T) => void;
 }
 
-const SYMBOLS = 'USD,GBP,ILS,RUB,UAH,CHF,AED,CNY,SEK,PLN';
+const SYMBOLS = 'USD,GBP,ILS,RUB,UAH,CHF,AED,CNY,SEK,PLN,TRY';
 
 // JSON-stat (Eurostat) → ordered series
 function jsonStatSeries(j: any): { period: string; value: number }[] {

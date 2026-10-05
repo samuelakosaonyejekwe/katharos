@@ -79,7 +79,17 @@ export function guideView(ctx: RouteCtx, mode: 'public' | 'firm' = 'firm'): HTML
           { class: 'guide-split' },
           card(
             t('Katharos in one paragraph'),
-            h('p', null, t('Katharos Title Desk (from the Greek καθαρός, “clean”, as in a clean title) helps Cypriot conveyancing lawyers protect buyers from hidden mortgages, charges and deadline risk between reservation and transfer. It reads the Greek Land Registry search certificate and the contract, extracts every owner, mortgage, memo, prohibition and deposited contract, runs a fixed set of checks written by advocates, and shows each finding next to the exact Greek line it came from. Once the lawyer approves, it issues a report in Greek, English and the buyer’s own language, and tracks every deadline until the contract is deposited and the title transferred.')),
+            h('div', { class: 'stack' }, h('p', { style: { margin: 0 } }, t('Katharos Title Desk (from the Greek καθαρός, “clean”, as in a clean title) helps Cypriot conveyancing lawyers protect buyers from hidden mortgages, charges and deadline risk between reservation and transfer. It reads the Greek Land Registry search certificate and the contract, extracts every owner, mortgage, memo, prohibition and deposited contract, runs a fixed set of checks written by advocates, and shows each finding next to the exact Greek line it came from. Once the lawyer approves, it issues a report in Greek, English and the buyer’s own language, and tracks every deadline until the contract is deposited and the title transferred.')),
+              h(
+                'div',
+                { class: 'principles' },
+                [
+                  ['scale', 'Rules decide, AI only explains'],
+                  ['search', 'Every finding linked to its Greek source line'],
+                  ['pen', 'The advocate approves every report'],
+                ].map(([i, x]) => h('div', { class: 'principle' }, icon(i, 18), h('span', null, t(x)))),
+              ),
+            ),
             { icon: 'shield' },
           ),
           card(t('At a glance'), h('div', { class: 'glance' }, glance.map(([i, v, l]) => h('div', { class: 'glance-item' }, icon(i, 20), h('strong', null, v), h('small', null, t(l))))), { icon: 'sparkle' }),

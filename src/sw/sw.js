@@ -8,7 +8,7 @@ const PRECACHE = [/*__PRECACHE__*/];
 
 // Live sources refreshed in the background (periodic sync) — public, credible, CORS-enabled.
 const FEED_URLS = [
-  'https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD,GBP,ILS,RUB,UAH,CHF,AED,CNY,SEK,PLN',
+  'https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD,GBP,ILS,RUB,UAH,CHF,AED,CNY,SEK,PLN,TRY',
   'https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/prc_hpi_q?geo=CY&unit=I15_Q&purchase=TOTAL&lastTimePeriod=12',
   `https://date.nager.at/api/v3/PublicHolidays/${new Date().getFullYear()}/CY`,
   `https://date.nager.at/api/v3/PublicHolidays/${new Date().getFullYear() + 1}/CY`,

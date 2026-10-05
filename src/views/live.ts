@@ -7,7 +7,14 @@ import { badge, card, field, spinner, toast } from '../core/ui';
 import { FEEDS, onFeed, readFeed, refreshAll, refreshFeed, type FeedId, type FeedState, type FxData, type HpiData, type NewsItem } from '../integrations/feeds';
 import { pageHead, sparkline } from './common';
 
-const CURRENCIES: Record<string, string> = { GBP: 'British pound', USD: 'US dollar', ILS: 'Israeli shekel', RUB: 'Russian rouble', UAH: 'Ukrainian hryvnia', CHF: 'Swiss franc', AED: 'UAE dirham', CNY: 'Chinese yuan', SEK: 'Swedish krona', PLN: 'Polish złoty' };
+const CURRENCIES: Record<string, string> = { GBP: 'British pound', USD: 'US dollar', ILS: 'Israeli shekel', RUB: 'Russian rouble', UAH: 'Ukrainian hryvnia', CHF: 'Swiss franc', AED: 'UAE dirham', CNY: 'Chinese yuan', SEK: 'Swedish krona', PLN: 'Polish złoty', TRY: 'Turkish lira' };
+
+function every(ms: number): string {
+  const min = Math.round(ms / 60000);
+  if (min < 60) return t('every {n} min', { n: min });
+  if (min < 1440) return t('every {n} h', { n: Math.round(min / 60) });
+  return t('every {n} days', { n: Math.round(min / 1440) });
+}
 
 function freshness(s: FeedState<unknown>): HTMLElement {
   return h(
@@ -21,16 +28,26 @@ function freshness(s: FeedState<unknown>): HTMLElement {
 }
 
 export async function liveView(): Promise<HTMLElement> {
-  const fxHost = h('div');
-  const hpiHost = h('div');
+  const fxHost = h('div', { class: 'fill' });
+  const hpiHost = h('div', { class: 'fill' });
   const newsHost = h('div');
   let amount = 250000;
   let q = '';
 
   const drawFx = async () => {
     const s = await readFeed<FxData>('fx');
-    const conv = h('div', { class: 'grid-4' });
-    const drawConv = () => mount(conv, s.data ? Object.entries(s.data.rates).map(([c, r]) => h('div', { class: 'stat' }, h('span', { class: 'label' }, `${c} · ${t(CURRENCIES[c] ?? c)}`), h('span', { class: 'value', style: { fontSize: '1.25rem' } }, num(amount * r, 0)), h('span', { class: 'sub' }, `€1 = ${num(r, 4)} ${c}`))) : spinner());
+    const conv = h('div');
+    const drawConv = () =>
+      mount(
+        conv,
+        s.data
+          ? h(
+              'div',
+              { class: 'fx-list' },
+              Object.entries(s.data.rates).map(([c, r]) => h('div', { class: 'fx-row' }, h('span', { class: 'fx-code' }, c), h('span', { class: 'fx-name muted' }, t(CURRENCIES[c] ?? c)), h('strong', { class: 'fx-amount' }, num(amount * r, 0)), h('small', { class: 'fx-rate muted' }, `€1 = ${num(r, 4)}`))),
+            )
+          : spinner(),
+      );
     drawConv();
     mount(
       fxHost,
@@ -54,6 +71,20 @@ export async function liveView(): Promise<HTMLElement> {
               { class: 'stack-sm' },
               h('div', { class: 'row' }, h('strong', { style: { fontSize: '1.6rem' } }, num(s.data.series.at(-1)?.index ?? 0, 1)), h('span', { class: 'muted' }, t('index, 2015 = 100 · {p}', { p: s.data.series.at(-1)?.period ?? '' })), s.data.annualChange ? badge(t('{v}% on a year earlier', { v: `${s.data.annualChange.value > 0 ? '+' : ''}${s.data.annualChange.value}` }), s.data.annualChange.value >= 0 ? 'teal' : 'amber') : null),
               sparkline(s.data.series.map((p) => ({ label: p.period, value: p.index }))),
+              (() => {
+                const ser = s.data!.series;
+                const last = ser.at(-1);
+                const prev = ser.at(-2);
+                const yearAgo = ser.at(-5);
+                const pct = (a?: number, b?: number) => (a && b ? `${a >= b ? '+' : ''}${num(((a - b) / b) * 100, 1)}%` : '—');
+                const tiles: [string, string, string][] = [
+                  [t('Latest quarter'), last ? num(last.index, 1) : '—', last?.period ?? ''],
+                  [t('Previous quarter'), prev ? num(prev.index, 1) : '—', pct(last?.index, prev?.index)],
+                  [t('A year earlier'), yearAgo ? num(yearAgo.index, 1) : '—', pct(last?.index, yearAgo?.index)],
+                  [t('Since 2015'), last ? `${last.index >= 100 ? '+' : ''}${num(last.index - 100, 1)}%` : '—', t('2015 = 100')],
+                ];
+                return h('div', { class: 'glance', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' } }, tiles.map(([l, v, sub]) => h('div', { class: 'glance-item' }, h('small', { class: 'muted' }, l), h('strong', null, v), h('small', null, sub))));
+              })(),
               freshness(s as FeedState<unknown>),
               h('small', { class: 'muted' }, t('Eurostat house price index (prc_hpi_q), all dwellings. Built from transaction data; Cyprus has no public register of actual sale prices.')),
             )
@@ -155,7 +186,7 @@ export async function liveView(): Promise<HTMLElement> {
     newsHost,
     card(
       t('Sources and fallbacks'),
-      h('div', { class: 'list' }, (Object.keys(FEEDS) as FeedId[]).map((id) => h('div', { class: 'list-item' }, h('div', { class: 'grow' }, h('div', { class: 'title' }, t(FEEDS[id].title)), h('small', { class: 'muted' }, FEEDS[id].sources.map((s) => s.name).join(' → '), 'gatewayPath' in FEEDS[id] ? ` → ${t('firm gateway mirror')}` : '', ` → ${t('last good copy')}`)), badge(t('every {n} min', { n: Math.round(FEEDS[id].ttlMs / 60000) }), 'neutral')))),
+      h('div', { class: 'list' }, (Object.keys(FEEDS) as FeedId[]).map((id) => h('div', { class: 'list-item' }, h('div', { class: 'grow' }, h('div', { class: 'title' }, t(FEEDS[id].title)), h('small', { class: 'muted' }, FEEDS[id].sources.map((s) => s.name).join(' → '), ` → ${t('last good copy')}`)), badge(every(FEEDS[id].ttlMs), 'neutral')))),
       { icon: 'layers' },
     ),
   );

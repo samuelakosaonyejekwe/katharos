@@ -2040,3 +2040,80 @@ button.stat:hover {
     bottom: calc(64px + env(safe-area-inset-bottom));
   }
 }
+.principles {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.principle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.principle .icon {
+  color: var(--primary);
+}
+@media (max-width: 640px) {
+  .principles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* paired cards in a row always share one height */
+.fill {
+  display: grid;
+  min-width: 0;
+}
+.fill > .card {
+  height: 100%;
+}
+.grid-2 > .card,
+.grid > .card {
+  height: 100%;
+}
+.fx-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+.fx-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-areas: 'code name amount' 'code rate amount';
+  align-items: center;
+  gap: 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.fx-code {
+  grid-area: code;
+  font-weight: 750;
+  font-size: 0.95rem;
+  color: var(--primary);
+}
+.fx-name {
+  grid-area: name;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fx-rate {
+  grid-area: rate;
+  font-size: 0.76rem;
+}
+.fx-amount {
+  grid-area: amount;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .fx-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

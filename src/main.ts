@@ -15,8 +15,9 @@ import { lockScreen } from './views/lock';
 import { trackNavigation } from './core/nav';
 
 // Public site — anyone may open these.
-const PUBLIC = ['/', '/live', '/guide', '/firm', '/verify'];
+const PUBLIC = ['/', '/b', '/live', '/guide', '/firm', '/verify'];
 route('/', async () => (await import('./views/public')).landingView(), { public: true });
+route('/b', async () => (await import('./views/buyer')).myReportView(), { public: true });
 route('/live', async () => (await import('./views/live')).liveView(), { public: true });
 route('/guide', async (c) => (await import('./views/guide')).guideView(c, 'public'), { public: true });
 route('/firm', async () => (await import('./views/public')).firmView(), { public: true });
@@ -80,7 +81,7 @@ async function renderPortal(): Promise<void> {
 /** Decides what this URL may show: public page, buyer portal, licence gate, vault lock, or the Desk. */
 async function dispatch(): Promise<void> {
   const { path } = current();
-  if (path === '/b' || path.startsWith('/b/')) return renderPortal();
+  if (path.startsWith('/b/')) return renderPortal();
   const m = match(path);
   if (!m || m.route.public) return renderPublic();
   if (!(await activeLicence())) {

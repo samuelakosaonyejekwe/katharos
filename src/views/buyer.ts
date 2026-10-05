@@ -3,7 +3,9 @@
 import { h, icon, mount } from '../core/dom';
 import { daysBetween, fmtDate, todayISO } from '../core/dates';
 import { canPromptInstall, isStandalone, promptInstall } from '../core/pwa';
-import { modal } from '../core/ui';
+import { bgrid, card, modal, toast } from '../core/ui';
+import { t } from '../core/i18n';
+import { goBack } from '../core/nav';
 import { needsPin, openPack, type BuyerPack } from '../domain/share';
 import { RTL, STATUSES, ALL_LANGS, type Lang } from '../domain/types';
 import { GLOSSARY, LANG_NAMES, ui } from '../i18n/messages';
@@ -27,6 +29,58 @@ function remember(token: string, ref: string): void {
   } catch {
     /* private mode */
   }
+}
+
+/** Returns to exactly the page the reader came from (or the home page if the link was opened directly). */
+function backButton(): HTMLElement {
+  return h('button', { class: 'icon-btn back-btn', type: 'button', title: t('Back'), 'aria-label': t('Back'), style: { color: '#fff' }, onclick: () => goBack() }, icon('arrowLeft'));
+}
+
+/** "My report" on the public site: open a report link or one saved on this device. */
+export function myReportView(): HTMLElement {
+  const input = h('input', { type: 'url', placeholder: 'https://…#/b/…', 'aria-label': t('Your report link') }) as HTMLInputElement;
+  const form = h(
+    'form',
+    {
+      class: 'stack-sm',
+      onsubmit: (e: Event) => {
+        e.preventDefault();
+        const m = input.value.match(/#\/b\/(.+)$/);
+        if (m) location.hash = `#/b/${m[1]}`;
+        else toast(t('Paste the full link your lawyer sent you'), 'warn');
+      },
+    },
+    h('label', { class: 'field' }, h('span', null, t('Your report link')), input),
+    h('button', { class: 'btn btn-primary', type: 'submit' }, icon('file', 18), t('Open my report')),
+  );
+  const saved = savedLinks();
+  return h(
+    'div',
+    { class: 'stack' },
+    h('h1', null, t('My report')),
+    h('p', { class: 'muted', style: { maxWidth: '75ch', margin: 0 } }, t('Open the report your lawyer sent you. It is encrypted inside the link, never stored on a server, and stays readable on this device offline.')),
+    h(
+      'div',
+      { class: 'guide-split' },
+      card(t('Open a report'), h('div', { class: 'stack' }, form, h('small', { class: 'muted' }, t('If your lawyer gave you a PIN, you will be asked for it after opening the link.'))), { icon: 'file' }),
+      card(
+        saved.length ? t('Saved on this device') : t('How to get your report'),
+        saved.length
+          ? h('div', { class: 'list' }, saved.map((l) => h('a', { class: 'list-item', href: `#/b/${l.token}` }, icon('file', 18), h('div', { class: 'grow' }, h('div', { class: 'title' }, l.ref), h('small', { class: 'muted' }, fmtDate(l.at.slice(0, 10)))), icon('arrowRight', 16))))
+          : h('ol', { class: 'install-steps' }, [t('Ask your conveyancing lawyer to prepare your report with Katharos.'), t('When it is ready you receive a link by email or WhatsApp.'), t('Open it here or straight from the message — it is saved on this device for next time.')].map((x) => h('li', null, h('span', null, x)))),
+        { icon: saved.length ? 'folder' : 'info' },
+      ),
+    ),
+    h('h2', { style: { margin: '8px 0 0' } }, t('What your report shows')),
+    bgrid(
+      [
+        ['shield', 'Every check on the title', 'Owners, mortgages, memos, prohibitions and earlier contracts — each marked “action needed”, “check with your lawyer” or “in order”.'],
+        ['calendar', 'Your key dates', 'When the contract must be deposited, when payments are due and when a fresh search is needed.'],
+        ['globe', 'In your language', 'Read it in any of 12 languages, with a glossary of the Greek Land Registry terms.'],
+        ['message', 'Questions to your lawyer', 'Send a question by email or WhatsApp straight from the report.'],
+      ].map(([i, a, b]) => h('div', { class: 'integration' }, h('div', { class: 'row' }, h('span', { class: 'empty-icon', style: { width: '40px', height: '40px', borderRadius: '12px' } }, icon(i, 20)), h('strong', null, t(a))), h('small', null, t(b)))),
+    ),
+  );
 }
 
 function guessLang(): Lang {
@@ -58,7 +112,7 @@ function renderEmpty(root: HTMLElement): void {
   const input = h('input', { type: 'url', placeholder: 'https://…#/b/…', 'aria-label': 'Link' }) as HTMLInputElement;
   mount(
     root,
-    h('div', { class: 'portal-hero' }, h('a', { class: 'icon-btn back-btn', href: '#/', 'aria-label': 'Katharos', style: { color: '#fff' } }, icon('arrowLeft')), h('h1', null, ui('portal', lang)), h('small', null, ui('notAdvice', lang))),
+    h('div', { class: 'portal-hero' }, backButton(), h('h1', null, ui('portal', lang)), h('small', null, ui('notAdvice', lang))),
     h('div', { class: 'card card-body stack-sm' }, input, h('button', { class: 'btn btn-primary', onclick: () => { const m = input.value.match(/#\/b\/(.+)$/); if (m) location.hash = `#/b/${m[1]}`; } }, ui('open', lang))),
     savedLinks().length ? h('div', { class: 'card card-body' }, h('div', { class: 'list' }, savedLinks().map((l) => h('a', { class: 'list-item', href: `#/b/${l.token}` }, icon('file', 18), h('div', { class: 'grow' }, h('div', { class: 'title' }, l.ref), h('small', { class: 'muted' }, fmtDate(l.at.slice(0, 10)))))))) : null,
   );
@@ -66,7 +120,7 @@ function renderEmpty(root: HTMLElement): void {
 
 function renderError(root: HTMLElement): void {
   const lang = guessLang();
-  mount(root, h('div', { class: 'portal-hero' }, h('h1', null, ui('portal', lang))), h('div', { class: 'callout danger' }, icon('alert'), ui('wrongPin', lang)));
+  mount(root, h('div', { class: 'portal-hero' }, backButton(), h('h1', null, ui('portal', lang))), h('div', { class: 'callout danger' }, icon('alert'), ui('wrongPin', lang)));
 }
 
 function renderPin(root: HTMLElement, token: string): void {
@@ -82,7 +136,7 @@ function renderPin(root: HTMLElement, token: string): void {
       mount(msg, h('div', { class: 'callout danger' }, icon('alert'), ui('wrongPin', lang)));
     }
   });
-  mount(root, h('div', { class: 'portal-hero' }, h('h1', null, ui('portal', lang)), h('small', null, ui('notAdvice', lang))), form);
+  mount(root, h('div', { class: 'portal-hero' }, backButton(), h('h1', null, ui('portal', lang)), h('small', null, ui('notAdvice', lang))), form);
   pin.focus();
 }
 
@@ -125,7 +179,7 @@ function renderPack(root: HTMLElement, pack: BuyerPack, token: string): void {
       h(
         'div',
         { class: 'portal-hero' },
-        h('div', { class: 'row-between' }, h('div', { class: 'row' }, h('a', { class: 'icon-btn back-btn', href: '#/', title: 'Katharos', 'aria-label': 'Katharos', style: { color: '#fff' } }, icon('arrowLeft')), h('small', null, pack.firm || 'Katharos')), langSel),
+        h('div', { class: 'row-between' }, h('div', { class: 'row' }, backButton(), h('small', null, pack.firm || 'Katharos')), langSel),
         h('h1', { style: { margin: '4px 0' } }, ui('portal', lang)),
         h('div', null, pack.property),
         pack.issuedAt ? h('small', null, ui('issuedBy', lang, { name: pack.advocate.name, date: fmtDate(pack.issuedAt.slice(0, 10)) })) : null,
