@@ -3,44 +3,52 @@ import { h, icon, mount, s } from '../core/dom';
 import { t } from '../core/i18n';
 import { onSwMessage, postToSw } from '../core/pwa';
 import { saveSettings, settings, type AiMode, type OcrMode } from '../core/settings';
-import { badge, card, field, modal, spinner, toast, toggle } from '../core/ui';
+import { badge, card, field, modal, pickFiles, spinner, toast, toggle } from '../core/ui';
+import { builtInCases, evaluate, parseTestSet, type EvalSummary } from '../domain/evaluate';
 import { gatewayHealth, INTEGRATIONS, type Integration } from '../integrations/registry';
 import { ocrPackCached } from '../integrations/ocr';
 import { pageHead } from './common';
 
 function diagram(states: Record<string, string>): SVGElement {
-  const live = (id: string) => (states[id] === 'ready' ? 'edge live' : 'edge');
-  const box = (x: number, y: number, w: number, label: string, sub: string, id?: string) =>
+  const services: [string, string, string][] = [
+    ['ai', t('Claude on Amazon Bedrock (EU)'), t('second reading · explain')],
+    ['azure', t('Azure Document Intelligence (EU)'), t('Greek OCR · handwriting check')],
+    ['whatsapp', t('WhatsApp Business'), t('neutral status only')],
+    ['email', t('Brevo email (EU)'), t('status + portal link')],
+    ['licence', t('Licence store'), t('billing · EU VAT')],
+    ['jcc', t('JCC e-signature'), t('signed PDF uploaded')],
+  ];
+  const stroke = (id?: string) => (id && states[id] === 'ready' ? 'var(--green)' : id && states[id] === 'error' ? 'var(--red)' : 'var(--border)');
+  const box = (x: number, y: number, w: number, hgt: number, label: string, sub: string, id?: string) =>
     s(
       'g',
       null,
-      s('rect', { class: 'box', x, y, width: w, height: 46, rx: 10, 'stroke-width': 1.4, stroke: id && states[id] === 'ready' ? 'var(--green)' : id && states[id] === 'error' ? 'var(--red)' : 'var(--border)' }),
-      s('text', { x: x + w / 2, y: y + 20, 'text-anchor': 'middle', 'font-size': 12.5, 'font-weight': 650 }, label),
-      s('text', { x: x + w / 2, y: y + 36, 'text-anchor': 'middle', 'font-size': 10.5, fill: 'var(--muted)' }, sub),
+      s('rect', { class: 'box', x, y, width: w, height: hgt, rx: 10, 'stroke-width': 1.4, stroke: stroke(id) }),
+      s('text', { x: x + 14, y: y + hgt / 2 - 3, 'font-size': 12.5, 'font-weight': 650 }, label),
+      s('text', { x: x + 14, y: y + hgt / 2 + 13, 'font-size': 10.5, fill: 'var(--muted)' }, sub),
     );
+  const ROW = 52;
+  const top = 40;
+  const sx = 470;
+  const browserY = top + (services.length * ROW) / 2 - 30;
   return s(
     'svg',
-    { class: 'diagram', viewBox: '0 0 860 360', role: 'img', 'aria-label': t('Architecture: browsers connect to public data directly and to the firm’s EU gateway, which connects to AI, OCR, messaging and screening services.') },
-    s('rect', { class: 'eu', x: 300, y: 10, width: 550, height: 340, rx: 16 }),
-    s('text', { x: 316, y: 32, 'font-size': 12, fill: 'var(--info)', 'font-weight': 700 }, t('European Union — where client documents are processed')),
-    box(20, 40, 240, t('Lawyer’s browser'), t('Katharos Desk · encrypted vault'), 'pdf'),
-    box(20, 150, 240, t('Buyer’s phone'), t('Portal · link-encrypted, offline'), undefined),
-    box(20, 260, 240, t('Public data sources'), t('ECB · Eurostat · news · holidays'), 'feed-fx'),
-    box(330, 150, 200, t('Firm gateway'), t('EU · keys never in browser'), 'gateway'),
-    box(600, 50, 230, t('Claude on Bedrock (EU)'), t('second reading · explain'), 'ai'),
-    box(600, 115, 230, t('Azure Document Intelligence'), t('Greek OCR · backup: Google'), 'azure'),
-    box(600, 180, 230, t('WhatsApp · Amazon SES'), t('neutral status only'), 'whatsapp'),
-    box(600, 245, 230, t('OpenSanctions'), t('party screening'), 'opensanctions'),
-    box(330, 290, 200, t('JCC e-signature'), t('signed PDF uploaded'), 'jcc'),
-    s('path', { class: live('gateway'), d: 'M260 63 C300 63 300 173 330 173' }),
-    s('path', { class: live('ai'), d: 'M530 165 C565 165 565 73 600 73' }),
-    s('path', { class: live('azure'), d: 'M530 170 C565 170 565 138 600 138' }),
-    s('path', { class: live('whatsapp'), d: 'M530 178 L600 203' }),
-    s('path', { class: live('opensanctions'), d: 'M530 185 C565 185 565 268 600 268' }),
-    s('path', { class: 'edge live', d: 'M140 86 L140 150' }),
-    s('path', { class: 'edge live', d: 'M140 260 L140 196' }),
-    s('path', { class: 'edge live', d: 'M100 260 C60 200 60 140 100 86' }),
-    s('path', { class: 'edge', d: 'M260 75 C290 75 300 300 330 313' }),
+    { class: 'diagram', viewBox: `0 0 860 ${top + services.length * ROW + 150}`, role: 'img', 'aria-label': t('Architecture: each browser connects directly to public data and to the organisation’s own AI, OCR and messaging accounts; no Katharos server is involved.') },
+    s('rect', { class: 'eu', x: sx - 24, y: top - 30, width: 860 - sx + 14, height: services.length * ROW + 30, rx: 16 }),
+    s('text', { x: sx - 8, y: top - 10, 'font-size': 12, fill: 'var(--info)', 'font-weight': 700 }, t('Your own accounts — called directly from the browser')),
+    box(20, browserY, 300, 60, t('This browser'), t('Katharos Desk · encrypted vault · rules'), 'pdf'),
+    services.map(([id, label, sub], i) => {
+      const y = top + i * ROW + 6;
+      return [
+        s('path', { class: states[id] === 'ready' ? 'edge live' : 'edge', d: `M320 ${browserY + 30} C400 ${browserY + 30} 400 ${y + 20} ${sx} ${y + 20}` }),
+        box(sx, y, 360, 40, label, sub, id),
+      ];
+    }),
+    box(20, top + services.length * ROW + 20, 300, 50, t('Buyer’s phone'), t('Portal · link-encrypted, offline')),
+    box(sx, top + services.length * ROW + 20, 360, 50, t('Public data sources'), t('ECB · Eurostat · news · holidays'), 'feed-fx'),
+    box(20, top + services.length * ROW + 82, 810, 44, t('Static hosting (free) — the app itself'), t('GitHub Pages · optional mirrors · cached on every device')),
+    s('path', { class: 'edge live', d: `M170 ${browserY + 60} L170 ${top + services.length * ROW + 20}` }),
+    s('path', { class: 'edge live', d: `M320 ${browserY + 40} C400 ${browserY + 40} 400 ${top + services.length * ROW + 45} ${sx} ${top + services.length * ROW + 45}` }),
   );
 }
 
@@ -104,40 +112,13 @@ export async function integrationsView(): Promise<HTMLElement> {
   };
 
   // ---- configuration
-  const gw = { url: st.gatewayUrl, token: st.gatewayToken, backup: st.gatewayBackupUrl };
-  const gatewayCfg = card(
-    t('Gateway'),
-    h(
-      'div',
-      { class: 'stack-sm' },
-      h('p', { class: 'muted' }, t('The gateway is a small service your firm deploys in an EU region (AWS Lambda in Milan by default). It keeps API keys off every device, keeps documents in the EU, and lets each browser use AI, cloud OCR, WhatsApp, email and screening. Deploy two in different regions or providers for redundancy.')),
-      h('div', { class: 'form-grid' }, field({ label: t('Gateway URL'), value: gw.url, placeholder: 'https://….lambda-url.eu-south-1.on.aws', onInput: (v) => (gw.url = v.trim()) }), field({ label: t('Backup gateway URL'), value: gw.backup, placeholder: t('optional — another region or provider'), onInput: (v) => (gw.backup = v.trim()) }), field({ label: t('Access token'), type: 'password', value: gw.token, onInput: (v) => (gw.token = v.trim()) })),
-      h(
-        'div',
-        { class: 'row' },
-        h(
-          'button',
-          {
-            class: 'btn btn-primary',
-            onclick: async () => {
-              if (gw.url && !/^https:\/\//.test(gw.url)) return toast(t('The gateway URL must start with https://'), 'warn');
-              await saveSettings({ gatewayUrl: gw.url, gatewayToken: gw.token, gatewayBackupUrl: gw.backup });
-              const { h: health, err } = await gatewayHealth(true);
-              toast(health ? t('Gateway connected') : t('Saved, but the gateway did not answer: {e}', { e: err ?? '' }), health ? 'ok' : 'warn', 6000);
-              await drawStates();
-            },
-          },
-          icon('check', 16),
-          t('Save and test'),
-        ),
-        h('button', { class: 'btn', onclick: () => deployHelp() }, icon('book', 16), t('How to deploy the gateway')),
-      ),
-    ),
-    { icon: 'plug' },
-  );
+  const save = async (patch: Partial<typeof st>) => {
+    await saveSettings(patch);
+    await drawStates();
+  };
 
   const aiCfg = card(
-    t('AI model'),
+    t('AI model (Claude on Amazon Bedrock, EU)'),
     h(
       'div',
       { class: 'stack-sm' },
@@ -146,17 +127,39 @@ export async function integrationsView(): Promise<HTMLElement> {
         value: st.aiMode,
         options: [
           ['off', t('Off — rules and on-device reading only')],
-          ['gateway', t('Via the EU gateway (Amazon Bedrock, EU region) — recommended')],
-          ['direct', t('Direct from this browser (Anthropic API — processed outside the EU)')],
+          ['bedrock', t('My Amazon Bedrock account, EU region — recommended')],
+          ['gateway', t('My own gateway (advanced)')],
+          ['direct', t('Anthropic API key (processed outside the EU — testing only)')],
         ],
         onInput: async (v) => {
-          if (v === 'direct') modal(t('Processing outside the EU'), h('p', null, t('In direct mode, documents are sent from this browser to the Anthropic API, which processes data in the US or globally. The report requires EU processing for client documents — use the gateway for real matters, and direct mode only for testing with fictitious documents.')));
-          await saveSettings({ aiMode: v as AiMode });
-          await drawStates();
+          if (v === 'direct') modal(t('Processing outside the EU'), h('p', null, t('In this mode documents are sent from this browser to the Anthropic API, which processes data in the US or globally. Use Bedrock in an EU region for real client documents, and this mode only for tests with fictitious documents.')));
+          await save({ aiMode: v as AiMode });
         },
       }),
-      h('div', { class: 'form-grid' }, field({ label: t('Primary model'), value: st.aiModel, hint: t('On Bedrock the gateway adds the region prefix'), onInput: (v) => void saveSettings({ aiModel: v.trim() }) }), field({ label: t('Backup model'), value: st.aiBackupModel, onInput: (v) => void saveSettings({ aiBackupModel: v.trim() }) }), field({ label: t('Anthropic API key (direct mode only)'), type: 'password', value: st.anthropicKey, onInput: (v) => void saveSettings({ anthropicKey: v.trim() }) })),
-      h('small', { class: 'muted' }, t('The AI is a second reader and an explainer. It never decides a legal check; every finding is approved by the advocate.')),
+      h(
+        'div',
+        { class: 'form-grid' },
+        field({ label: t('Bedrock API key'), type: 'password', value: st.bedrockApiKey, onInput: (v) => void saveSettings({ bedrockApiKey: v.trim() }) }),
+        field({
+          label: t('EU region'),
+          value: st.bedrockRegion,
+          options: [
+            ['eu-central-1', 'Frankfurt (eu-central-1)'],
+            ['eu-west-1', 'Ireland (eu-west-1)'],
+            ['eu-west-3', 'Paris (eu-west-3)'],
+            ['eu-south-1', 'Milan (eu-south-1)'],
+            ['eu-north-1', 'Stockholm (eu-north-1)'],
+            ['eu-south-2', 'Spain (eu-south-2)'],
+            ['eu-central-2', 'Zurich (eu-central-2)'],
+          ],
+          onInput: (v) => void save({ bedrockRegion: v }),
+        }),
+        field({ label: t('Primary model'), value: st.aiModel, onInput: (v) => void saveSettings({ aiModel: v.trim() }) }),
+        field({ label: t('Backup model'), value: st.aiBackupModel, onInput: (v) => void saveSettings({ aiBackupModel: v.trim() }) }),
+        field({ label: t('Anthropic API key (testing only)'), type: 'password', value: st.anthropicKey, onInput: (v) => void saveSettings({ anthropicKey: v.trim() }) }),
+      ),
+      h('ol', { class: 'install-steps' }, [t('In your AWS console open Amazon Bedrock in an EU region and enable access to the Claude models.'), t('Create a Bedrock API key (Bedrock → API keys) and paste it here.'), t('Press “Test now” on the AI model card above. Usage is billed to your AWS account.')].map((x) => h('li', null, h('span', null, x)))),
+      h('small', { class: 'muted' }, t('The AI is a second reader and an explainer. It never decides a legal check; every finding is approved by a person. Keys are stored encrypted in this device’s vault.')),
     ),
     { icon: 'sparkle' },
   );
@@ -172,16 +175,13 @@ export async function integrationsView(): Promise<HTMLElement> {
         label: t('Scanned documents are read by'),
         value: st.ocrMode,
         options: [
-          ['local', t('This device (Tesseract, Greek + English) — works offline')],
-          ['gateway', t('Azure Document Intelligence via the gateway, Google Document AI as backup')],
-          ['azure-direct', t('Azure Document Intelligence direct from this browser')],
+          ['local', t('This device (Greek + English) — free, works offline')],
+          ['azure-direct', t('My Azure Document Intelligence resource (EU) — detects handwriting')],
+          ['gateway', t('My own gateway (advanced)')],
         ],
-        onInput: async (v) => {
-          await saveSettings({ ocrMode: v as OcrMode });
-          await drawStates();
-        },
+        onInput: (v) => void save({ ocrMode: v as OcrMode }),
       }),
-      h('div', { class: 'form-grid' }, field({ label: t('Azure endpoint (direct mode)'), value: st.azureEndpoint, placeholder: 'https://<name>.cognitiveservices.azure.com', onInput: (v) => void saveSettings({ azureEndpoint: v.trim() }) }), field({ label: t('Azure key (direct mode)'), type: 'password', value: st.azureKey, onInput: (v) => void saveSettings({ azureKey: v.trim() }) })),
+      h('div', { class: 'form-grid' }, field({ label: t('Azure endpoint'), value: st.azureEndpoint, placeholder: 'https://<name>.cognitiveservices.azure.com', onInput: (v) => void saveSettings({ azureEndpoint: v.trim() }) }), field({ label: t('Azure key'), type: 'password', value: st.azureKey, onInput: (v) => void saveSettings({ azureKey: v.trim() }) })),
       h(
         'div',
         { class: 'row' },
@@ -219,26 +219,114 @@ export async function integrationsView(): Promise<HTMLElement> {
   );
 
   const msgCfg = card(
-    t('Messaging and screening'),
+    t('Messaging'),
     h(
       'div',
       { class: 'stack-sm' },
-      toggle(t('Send WhatsApp template messages through the gateway'), st.whatsappEnabled, (v) => void saveSettings({ whatsappEnabled: v }).then(drawStates), t('Needs a WhatsApp Business account and an approved neutral template on the gateway. Device links (wa.me) always work without it.')),
-      toggle(t('Send emails through the gateway (Amazon SES)'), st.emailViaGateway, (v) => void saveSettings({ emailViaGateway: v }).then(drawStates), t('Otherwise the device’s email app opens with the message ready.')),
-      field({ label: t('OpenSanctions API key (optional)'), type: 'password', value: st.openSanctionsKey, onInput: (v) => void saveSettings({ openSanctionsKey: v.trim() }) }),
+      h('p', { class: 'muted' }, t('Without any setup, Katharos opens WhatsApp or your email app on this device with the message ready — free. Connect your own accounts to send automatically.')),
+      h(
+        'div',
+        { class: 'columns' },
+        h('div', { class: 'stack-sm' }, h('h4', { style: { margin: 0 } }, 'WhatsApp Business (Meta Cloud API)'), field({ label: t('Access token'), type: 'password', value: st.waToken, onInput: (v) => void saveSettings({ waToken: v.trim() }) }), field({ label: t('Phone number ID'), value: st.waPhoneId, onInput: (v) => void saveSettings({ waPhoneId: v.trim() }) }), field({ label: t('Approved template name'), value: st.waTemplate, onInput: (v) => void saveSettings({ waTemplate: v.trim() }), hint: t('A neutral utility template such as “There is an update in your portal”.') })),
+        h('div', { class: 'stack-sm' }, h('h4', { style: { margin: 0 } }, t('Email (Brevo)')), field({ label: t('Brevo API key'), type: 'password', value: st.brevoKey, onInput: (v) => void saveSettings({ brevoKey: v.trim() }) }), field({ label: t('Sender email (verified in Brevo)'), type: 'email', value: st.brevoSender, onInput: (v) => void saveSettings({ brevoSender: v.trim() }) }), field({ label: t('Sender name'), value: st.brevoSenderName, onInput: (v) => void saveSettings({ brevoSenderName: v }) })),
+      ),
+      h('button', { class: 'btn btn-sm', onclick: () => void drawStates() }, icon('check', 14), t('Save and re-check')),
     ),
     { icon: 'message' },
+  );
+
+  const gw = { url: st.gatewayUrl, token: st.gatewayToken, backup: st.gatewayBackupUrl };
+  const gatewayCfg = h(
+    'details',
+    { class: 'faq' },
+    h('summary', null, t('Advanced: your own gateway (optional)')),
+    h(
+      'div',
+      { class: 'stack-sm', style: { paddingBottom: '12px' } },
+      h('p', { class: 'muted' }, t('Only if your IT team prefers to keep integration keys on a server it runs in the EU rather than in this encrypted vault. Not needed for any feature.')),
+      h('div', { class: 'form-grid' }, field({ label: t('Gateway URL'), value: gw.url, placeholder: 'https://…', onInput: (v) => (gw.url = v.trim()) }), field({ label: t('Backup gateway URL'), value: gw.backup, placeholder: t('optional — another region or provider'), onInput: (v) => (gw.backup = v.trim()) }), field({ label: t('Access token'), type: 'password', value: gw.token, onInput: (v) => (gw.token = v.trim()) })),
+      toggle(t('Send WhatsApp through the gateway'), st.whatsappEnabled, (v) => void save({ whatsappEnabled: v })),
+      toggle(t('Send email through the gateway'), st.emailViaGateway, (v) => void save({ emailViaGateway: v })),
+      field({ label: t('OpenSanctions API key (used by the gateway)'), type: 'password', value: st.openSanctionsKey, onInput: (v) => void saveSettings({ openSanctionsKey: v.trim() }) }),
+      h(
+        'div',
+        { class: 'row' },
+        h(
+          'button',
+          {
+            class: 'btn btn-primary',
+            onclick: async () => {
+              if (gw.url && !/^https:\/\//.test(gw.url)) return toast(t('The gateway URL must start with https://'), 'warn');
+              await saveSettings({ gatewayUrl: gw.url, gatewayToken: gw.token, gatewayBackupUrl: gw.backup });
+              const { h: health, err } = await gatewayHealth(true);
+              toast(health ? t('Gateway connected') : gw.url ? t('Saved, but the gateway did not answer: {e}', { e: err ?? '' }) : t('Saved'), health || !gw.url ? 'ok' : 'warn', 6000);
+              await drawStates();
+            },
+          },
+          icon('check', 16),
+          t('Save and test'),
+        ),
+        h('button', { class: 'btn', onclick: () => deployHelp() }, icon('book', 16), t('How to deploy the gateway')),
+      ),
+    ),
+  );
+
+  const evalOut = h('div');
+  const showEval = (r: EvalSummary) =>
+    mount(
+      evalOut,
+      h(
+        'div',
+        { class: 'stack-sm' },
+        h('div', { class: `callout ${r.passed ? 'ok' : 'danger'}` }, icon(r.passed ? 'check' : 'alert'), t('{c} cases · {e} expected entries · {m} missed · {x} extra · owners {o}% · fields {f}%', { c: r.cases, e: r.expectedEntries, m: r.missed, x: r.extra, o: Math.round(r.ownerAccuracy * 100), f: Math.round(r.fieldAccuracy * 100) })),
+        r.results.filter((x) => x.missed.length || x.extra.length || !x.ownersOk || !x.kindOk || !x.dateOk).map((x) => h('div', { class: 'callout warn' }, icon('alert'), h('span', null, h('strong', null, x.name), ` — ${[x.missed.length && `${t('missed')}: ${x.missed.join(', ')}`, x.extra.length && `${t('extra')}: ${x.extra.join(', ')}`, !x.ownersOk && t('owners differ'), !x.kindOk && t('type differs'), !x.dateOk && t('date differs')].filter(Boolean).join(' · ')}`))),
+      ),
+    );
+  const evalCfg = card(
+    t('Accuracy evaluation'),
+    h(
+      'div',
+      { class: 'stack-sm' },
+      h('p', { class: 'muted' }, t('Measures the document reader against labelled certificates. The release target is zero missed encumbrances. Run it after every update, and add your own anonymised, annotated certificates as a test set.')),
+      h(
+        'div',
+        { class: 'row' },
+        h('button', { class: 'btn btn-sm btn-primary', onclick: () => showEval(evaluate(builtInCases())) }, icon('refresh', 14), t('Run built-in test set')),
+        h(
+          'button',
+          {
+            class: 'btn btn-sm',
+            onclick: async () => {
+              const [f] = await pickFiles('.json,application/json', false);
+              if (!f) return;
+              try {
+                showEval(evaluate(parseTestSet(JSON.parse(await f.text()))));
+              } catch (e) {
+                toast((e as Error).message, 'error', 7000);
+              }
+            },
+          },
+          icon('upload', 14),
+          t('Run my test set (JSON)'),
+        ),
+      ),
+      evalOut,
+    ),
+    { icon: 'scale', help: t('Test set format: {"cases":[{"name":"…","text":"certificate text…","expected":{"issuedOn":"2026-09-01","owners":["…"],"encumbrances":[{"kind":"mortgage","holder":"…"}]}}]}. Everything runs on this device.') },
   );
 
   void drawStates();
   return h(
     'div',
     { class: 'stack' },
-    pageHead(t('Integrations'), t('Every connection in Katharos — what it does, where the data goes, whether it is working right now. Configure and test them here; the core product works fully without any of them.'), h('button', { class: 'btn', onclick: () => void drawStates() }, icon('refresh', 18), t('Re-check all'))),
+    pageHead(t('Integrations'), t('Every connection in Katharos — what it does, where the data goes, whether it is working right now. Connect and test them here; the core product works fully without any of them.'), h('button', { class: 'btn', onclick: () => void drawStates() }, icon('refresh', 18), t('Re-check all'))),
     card(t('How everything is wired'), diagramHost, { icon: 'layers', help: t('Animated lines are live connections. Client documents only ever go to services inside the EU boundary; WhatsApp carries a neutral status line only; GitHub holds code, never client data.') }),
     statesHost,
-    h('h2', null, t('Configure')),
-    h('div', { class: 'grid-2' }, gatewayCfg, aiCfg, ocrCfg, msgCfg),
+    h('h2', null, t('Connect your accounts')),
+    h('div', { class: 'callout' }, icon('coins'), h('span', null, t('Each organisation connects its own accounts. Calls go straight from this browser to the provider, and usage is billed by that provider to you — there is no Katharos server in between.'))),
+    h('div', { class: 'columns' }, h('div', { class: 'stack' }, aiCfg), h('div', { class: 'stack' }, ocrCfg, evalCfg)),
+    msgCfg,
+    gatewayCfg,
   );
 }
 

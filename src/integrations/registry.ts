@@ -2,7 +2,10 @@
 // whether it is ready, and how to test it from the browser.
 import { settings } from '../core/settings';
 import { aiAvailable, aiPing } from './ai';
-import { gateway, gatewayConfigured } from './http';
+import { fetchWithTimeout, gateway, gatewayConfigured } from './http';
+import { canSendEmail, canSendWhatsApp, emailDirect, whatsappDirect } from './messaging';
+import { activeLicence } from '../core/licence';
+import { publicConfig } from '../core/config';
 import { ocrPackCached } from './ocr';
 import { refreshFeed, type FeedId } from './feeds';
 
@@ -54,96 +57,93 @@ const feedTest = (id: FeedId) => async () => {
 
 export const INTEGRATIONS: Integration[] = [
   {
-    id: 'gateway',
-    name: 'Katharos gateway (EU)',
-    layer: 'Application services',
-    purpose: 'Holds the firm’s secret keys and calls AI, OCR, WhatsApp, email and screening on the browser’s behalf. Runs in an EU region you control — never on a personal machine.',
-    wiring: 'Browser → HTTPS (bearer token) → AWS Lambda / any Node host in the EU; automatic failover to a backup gateway URL',
-    dataLocation: 'EU (Milan / Frankfurt)',
-    state: async () => {
-      if (!gatewayConfigured()) return { state: 'off', detail: 'Not connected — optional; everything core works without it' };
-      const { h, err } = await gatewayHealth();
-      return h ? { state: 'ready', detail: `Online · ${h.region ?? 'EU'} · v${h.version ?? '?'}${settings().gatewayBackupUrl ? ' · backup configured' : ''}` } : { state: 'error', detail: err ?? 'unreachable' };
-    },
-    test: async () => {
-      const { h, err } = await gatewayHealth(true);
-      if (!h) throw new Error(err ?? 'unreachable');
-      return `OK — connectors: ${Object.entries(h.connectors).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none yet'}`;
-    },
-  },
-  {
     id: 'ai',
-    name: 'AI model — Claude via Amazon Bedrock (EU)',
+    name: 'AI model — Claude on Amazon Bedrock (EU)',
     layer: 'AI and document reading',
-    purpose: 'Second, independent reading of every document; plain-language explanations; translations; draft answers for the lawyer. Backup model on outage or refusal.',
-    wiring: 'Gateway → Bedrock (EU region) · or direct from this browser with the firm’s Anthropic key (processing outside the EU — warned)',
-    dataLocation: 'EU via gateway · US/global if direct',
+    purpose: 'Second, independent reading of every document; plain-language explanations; draft answers for the lawyer. Falls back to a second model on outage or refusal.',
+    wiring: 'This browser → your own Amazon Bedrock account in an EU region (your API key, billed to you by AWS)',
+    dataLocation: 'EU (your AWS region)',
     state: async () => {
       const s = settings();
       if (s.aiMode === 'off') return { state: 'off', detail: 'Off — rules and on-device reading still run' };
-      if (!aiAvailable()) return { state: 'error', detail: s.aiMode === 'gateway' ? 'Gateway not connected' : 'No API key' };
-      return { state: 'ready', detail: `${s.aiMode === 'gateway' ? 'Via EU gateway' : 'Direct (non-EU processing)'} · ${s.aiModel} → ${s.aiBackupModel}` };
+      if (!aiAvailable()) return { state: 'error', detail: s.aiMode === 'bedrock' ? 'Add your Bedrock API key' : s.aiMode === 'gateway' ? 'Gateway not connected' : 'No API key' };
+      const where = { bedrock: `Bedrock ${s.bedrockRegion}`, gateway: 'Via your gateway', direct: 'Anthropic API (outside the EU)' }[s.aiMode];
+      return { state: 'ready', detail: `${where} · ${s.aiModel} → ${s.aiBackupModel}` };
     },
     test: aiPing,
-  },
-  {
-    id: 'ocr-local',
-    name: 'On-device Greek OCR',
-    layer: 'AI and document reading',
-    purpose: 'Reads scanned Greek and English pages on this device — works in airplane mode. Never claims to read handwriting.',
-    wiring: 'Tesseract (self-hosted engine + Greek/English language data), cached for offline use',
-    dataLocation: 'This device only',
-    state: async () => ((await ocrPackCached()) ? { state: 'ready', detail: 'Cached for offline use' } : { state: 'partial', detail: 'Downloads on first use (≈16 MB) — or cache it now in Settings' }),
   },
   {
     id: 'pdf',
     name: 'PDF text layer reader',
     layer: 'AI and document reading',
     purpose: 'Reads digital certificates downloaded from the Land Registry portal exactly, line by line, for source-linked findings.',
-    wiring: 'pdf.js, bundled; runs in a worker',
+    wiring: 'Built into the app; runs on this device',
     dataLocation: 'This device only',
     state: async () => ({ state: 'ready', detail: 'Built in' }),
+  },
+  {
+    id: 'ocr-local',
+    name: 'On-device Greek OCR',
+    layer: 'AI and document reading',
+    purpose: 'Reads scanned Greek and English pages on this device, free and in airplane mode. Never claims to read handwriting.',
+    wiring: 'Built into the app (Greek + English language data), cached for offline use',
+    dataLocation: 'This device only',
+    state: async () => ((await ocrPackCached()) ? { state: 'ready', detail: 'Cached for offline use' } : { state: 'partial', detail: 'Downloads on first use (≈16 MB) — or cache it now below' }),
   },
   {
     id: 'azure',
     name: 'Azure AI Document Intelligence (EU)',
     layer: 'AI and document reading',
-    purpose: 'Cloud OCR for printed Greek, with handwriting detection to route pages to a person.',
-    wiring: 'Gateway → Azure (EU region) · or direct with an Azure key',
+    purpose: 'Cloud OCR for printed Greek, with handwriting detection that routes pages to a person.',
+    wiring: 'This browser → your own Azure resource in an EU region (your key, billed to you by Microsoft)',
     dataLocation: 'EU region of your Azure resource',
     state: async () => {
       const s = settings();
-      if (s.ocrMode === 'azure-direct') return s.azureEndpoint && s.azureKey ? { state: 'ready', detail: 'Direct from browser' } : { state: 'error', detail: 'Endpoint or key missing' };
+      if (s.ocrMode === 'azure-direct') return s.azureEndpoint && s.azureKey ? { state: 'ready', detail: 'Connected from this browser' } : { state: 'error', detail: 'Endpoint or key missing' };
       if (s.ocrMode === 'gateway') return conn('azure');
       return { state: 'off', detail: 'Using on-device OCR' };
     },
-  },
-  {
-    id: 'google',
-    name: 'Google Document AI (backup OCR)',
-    layer: 'AI and document reading',
-    purpose: 'Keeps cloud OCR working if Azure is unavailable.',
-    wiring: 'Gateway → Google Document AI (EU location)',
-    dataLocation: 'EU',
-    state: () => conn('google'),
+    test: async () => {
+      const s = settings();
+      if (!s.azureEndpoint || !s.azureKey) throw new Error('Add the endpoint and key first');
+      const res = await fetchWithTimeout(`${s.azureEndpoint.replace(/\/+$/, '')}/documentintelligence/info?api-version=2024-11-30`, { headers: { 'Ocp-Apim-Subscription-Key': s.azureKey }, timeoutMs: 15000 });
+      if (!res.ok) throw new Error(`Azure: HTTP ${res.status}`);
+      return 'OK — Azure resource reachable';
+    },
   },
   {
     id: 'whatsapp',
     name: 'WhatsApp Business Platform',
     layer: 'Trust and messaging',
     purpose: 'Neutral, opt-in status messages to buyers ("a new update is in your portal"). No legal content.',
-    wiring: 'Gateway → WhatsApp Cloud API template · or wa.me link from this device',
+    wiring: 'This browser → your own WhatsApp Business account (Meta Cloud API) · or the wa.me link on this device, free',
     dataLocation: 'Meta (status text only)',
-    state: async () => (settings().whatsappEnabled ? conn('whatsapp') : { state: 'partial', detail: 'Device links (wa.me) — always available' }),
+    state: async () => (whatsappDirect() ? { state: 'ready', detail: 'Your WhatsApp Business account' } : canSendWhatsApp() ? conn('whatsapp') : { state: 'partial', detail: 'Device links (wa.me) — always available, free' }),
+    test: async () => {
+      const s = settings();
+      if (!whatsappDirect()) throw new Error('Add the access token and phone number ID first');
+      const res = await fetchWithTimeout(`https://graph.facebook.com/v21.0/${encodeURIComponent(s.waPhoneId)}?fields=display_phone_number,verified_name`, { headers: { authorization: `Bearer ${s.waToken}` }, timeoutMs: 15000 });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error?.message ?? `HTTP ${res.status}`);
+      return `OK — ${j.verified_name ?? ''} ${j.display_phone_number ?? ''}`.trim();
+    },
   },
   {
     id: 'email',
-    name: 'Email (Amazon SES)',
+    name: 'Email (Brevo, EU)',
     layer: 'Trust and messaging',
     purpose: 'Status emails with the buyer’s portal link.',
-    wiring: 'Gateway → Amazon SES (EU) · or mailto: from this device',
+    wiring: 'This browser → your own Brevo account (free tier available) · or your email app on this device, free',
     dataLocation: 'EU',
-    state: async () => (settings().emailViaGateway ? conn('email') : { state: 'partial', detail: 'Device email app (mailto) — always available' }),
+    state: async () => (emailDirect() ? { state: 'ready', detail: 'Your Brevo account' } : canSendEmail() ? conn('email') : { state: 'partial', detail: 'Device email app (mailto) — always available, free' }),
+    test: async () => {
+      const s = settings();
+      if (!emailDirect()) throw new Error('Add the API key and sender address first');
+      const res = await fetchWithTimeout('https://api.brevo.com/v3/account', { headers: { 'api-key': s.brevoKey, accept: 'application/json' }, timeoutMs: 15000 });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.message ?? `HTTP ${res.status}`);
+      return `OK — ${j.companyName ?? j.email ?? 'account reachable'}`;
+    },
   },
   {
     id: 'jcc',
@@ -155,20 +155,52 @@ export const INTEGRATIONS: Integration[] = [
     state: async () => ({ state: 'partial', detail: 'Manual signing flow — no public API was found' }),
   },
   {
+    id: 'licence',
+    name: 'Licence and billing',
+    layer: 'Sign-in',
+    purpose: 'Professional licences are bought and renewed through the licence store, which also handles EU VAT. Katharos checks the licence from this browser.',
+    wiring: 'Licence store (Lemon Squeezy) licence API, called from this browser; operator-issued keys are checked on the device',
+    dataLocation: 'Licence key and device name only',
+    state: async () => {
+      const l = await activeLicence();
+      const cfg = await publicConfig();
+      if (!l) return { state: 'error', detail: 'No licence on this device' };
+      return { state: 'ready', detail: `${l.holder || '—'} · ${l.kind === 'store' ? 'store licence' : 'operator licence'}${l.exp ? ` · until ${l.exp}` : ''}${cfg.lemonsqueezy.storeId === null && l.kind === 'store' ? ' · store not configured' : ''}` };
+    },
+  },
+  {
     id: 'opensanctions',
     name: 'OpenSanctions screening (optional)',
     layer: 'Compliance',
     purpose: 'Screens sellers and buyers against sanctions and PEP lists; leads for the compliance officer.',
-    wiring: 'Direct from browser with the firm’s key · or via gateway',
+    wiring: 'Through your own gateway (the OpenSanctions API does not accept direct browser calls)',
     dataLocation: 'OpenSanctions API (names only)',
-    state: async () => (settings().openSanctionsKey ? { state: 'ready', detail: 'Direct key set' } : gatewayConfigured() ? conn('screening') : { state: 'off', detail: 'Optional' }),
+    state: async () => (gatewayConfigured() ? conn('screening') : { state: 'off', detail: 'Optional — needs your own gateway' }),
+  },
+  {
+    id: 'gateway',
+    name: 'Your own gateway (optional)',
+    layer: 'Application services',
+    purpose: 'Only if your IT team prefers to hold integration keys on a server it runs in the EU instead of in this encrypted vault. Not needed for any core feature.',
+    wiring: 'This browser → your gateway (HTTPS, bearer token) → providers; automatic failover to a backup gateway',
+    dataLocation: 'EU (your account)',
+    state: async () => {
+      if (!gatewayConfigured()) return { state: 'off', detail: 'Not used — integrations connect directly from this browser' };
+      const { h, err } = await gatewayHealth();
+      return h ? { state: 'ready', detail: `Online · ${h.region ?? 'EU'} · v${h.version ?? '?'}${settings().gatewayBackupUrl ? ' · backup configured' : ''}` } : { state: 'error', detail: err ?? 'unreachable' };
+    },
+    test: async () => {
+      const { h, err } = await gatewayHealth(true);
+      if (!h) throw new Error(err ?? 'unreachable');
+      return `OK — connectors: ${Object.entries(h.connectors).filter(([, v]) => v).map(([k]) => k).join(', ') || 'none yet'}`;
+    },
   },
   {
     id: 'feed-fx',
     name: 'ECB exchange rates',
     layer: 'Live data',
     purpose: 'Euro rates for buyer currencies (USD, GBP, ILS, RUB, UAH…).',
-    wiring: 'Each browser → Frankfurter (ECB) → ECB data API → gateway mirror → last good copy',
+    wiring: 'Each browser → Frankfurter (ECB) → ECB data API → last good copy',
     dataLocation: 'Public data',
     state: async () => ({ state: 'ready', detail: 'Live, multi-source' }),
     test: feedTest('fx'),
@@ -178,7 +210,7 @@ export const INTEGRATIONS: Integration[] = [
     name: 'Eurostat house price index (Cyprus)',
     layer: 'Live data',
     purpose: 'Official quarterly residential price index and annual change.',
-    wiring: 'Each browser → Eurostat dissemination API → gateway mirror → last good copy',
+    wiring: 'Each browser → Eurostat dissemination API → last good copy',
     dataLocation: 'Public data',
     state: async () => ({ state: 'ready', detail: 'Live' }),
     test: feedTest('hpi'),
@@ -188,7 +220,7 @@ export const INTEGRATIONS: Integration[] = [
     name: 'Cyprus property news',
     layer: 'Live data',
     purpose: 'Cyprus Mail property section and Google News coverage of title deeds, Land Registry and real estate.',
-    wiring: 'Each browser → rss2json → direct RSS via proxy → gateway mirror → last good copy',
+    wiring: 'Each browser → rss2json → direct RSS via proxy → last good copy',
     dataLocation: 'Public data',
     state: async () => ({ state: 'ready', detail: 'Live, multi-source' }),
     test: feedTest('news'),

@@ -226,3 +226,15 @@ export function dropZone(label: string, accept: string, onFiles: (f: File[]) => 
 export function severityTone(s: string): 'red' | 'amber' | 'green' | 'info' {
   return s === 'red' ? 'red' : s === 'amber' ? 'amber' : s === 'green' ? 'green' : 'info';
 }
+
+/**
+ * A grid whose column count is chosen from the number of items so the rows come out even
+ * (no lone card on the last row); it collapses to two columns on tablets and one on phones.
+ */
+export function bgrid(items: Node[], cls = ''): HTMLElement {
+  const n = items.length;
+  // Prefer full rows; otherwise the layout whose last row is fullest.
+  let cols = [4, 3, 2].find((c) => n >= c && n % c === 0) ?? ((n % 4) / 4 >= (n % 3) / 3 ? 4 : 3);
+  if (n < cols) cols = Math.max(1, n);
+  return h('div', { class: `bgrid ${cls}`.trim(), style: { '--cols': String(cols) } as never }, items);
+}

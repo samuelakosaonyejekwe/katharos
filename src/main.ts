@@ -12,13 +12,15 @@ import { forgetMatters, syncReminders } from './domain/matters';
 import { startFeedLoop, refreshFeed, FEEDS, type FeedId } from './integrations/feeds';
 import { flushOutbox } from './integrations/messaging';
 import { lockScreen } from './views/lock';
+import { trackNavigation } from './core/nav';
 
 // Public site — anyone may open these.
-const PUBLIC = ['/', '/live', '/guide', '/firm'];
+const PUBLIC = ['/', '/live', '/guide', '/firm', '/verify'];
 route('/', async () => (await import('./views/public')).landingView(), { public: true });
 route('/live', async () => (await import('./views/live')).liveView(), { public: true });
 route('/guide', async (c) => (await import('./views/guide')).guideView(c, 'public'), { public: true });
 route('/firm', async () => (await import('./views/public')).firmView(), { public: true });
+route('/verify', async () => (await import('./views/public')).verifyView(), { public: true });
 
 // Katharos Desk — licensed firms only, behind the encrypted vault.
 // Views are split into separate chunks and loaded on first visit (all are precached for offline use).
@@ -82,7 +84,7 @@ async function dispatch(): Promise<void> {
   const m = match(path);
   if (!m || m.route.public) return renderPublic();
   if (!(await activeLicence())) {
-    toast(t('Katharos Desk is for licensed law firms — enter your licence key first.'), 'info', 5000);
+    toast(t('Katharos Desk needs a professional licence — activate yours first.'), 'info', 5000);
     return navigate('/firm', true);
   }
   if (!vault.isUnlocked()) {
@@ -103,6 +105,7 @@ async function dispatch(): Promise<void> {
 
 async function boot(): Promise<void> {
   await initUiLang();
+  trackNavigation();
   initPwa();
   startFeedLoop();
 

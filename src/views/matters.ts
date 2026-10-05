@@ -4,6 +4,7 @@ import { locale, t } from '../core/i18n';
 import { navigate, type RouteCtx } from '../core/router';
 import { card, empty, field, toast, toggle } from '../core/ui';
 import { createMatter, listMatters } from '../domain/matters';
+import { hasRole } from '../core/licence';
 import { latestCert, tally } from '../domain/rules';
 import { BUYER_LANGS, STATUSES, type Lang, type Matter } from '../domain/types';
 import { LANG_NAMES } from '../i18n/messages';
@@ -83,6 +84,16 @@ export async function mattersView(ctx: RouteCtx): Promise<HTMLElement> {
     'div',
     { class: 'stack' },
     pageHead(t('Matters'), t('Each matter is one purchase: certificates, contract, checks, report and deadlines, encrypted on this device.'), h('a', { class: 'btn btn-primary', href: '#/matters/new' }, icon('plus', 18), t('New matter'))),
+    h(
+      'div',
+      { class: 'grid-4' },
+      [
+        ['folder', t('Open matters'), all.filter((m) => m.status !== 'closed').length, ''],
+        ['scale', t('To review'), all.filter((m) => m.findings.some((f) => (f.severity === 'red' || f.severity === 'amber') && !m.reviews[f.key])).length, 'amber'],
+        ['alert', t('Red flags'), all.reduce((n, m) => n + tally(m.findings).red, 0), 'red'],
+        ['file', t('Reports issued'), all.filter((m) => m.report).length, 'green'],
+      ].map(([i, l, v, tone]) => h('div', { class: `stat ${tone}` }, h('span', { class: 'label' }, icon(String(i), 16), String(l)), h('span', { class: 'value' }, String(v)))),
+    ),
     h('div', { class: 'row' }, h('div', { style: { flex: '1 1 280px' } }, search), seg),
     host,
   );
@@ -92,17 +103,21 @@ export function newMatterView(): HTMLElement {
   const state = { firmRef: '', buyerName: '', buyerEmail: '', buyerPhone: '', buyerLang: 'en' as Lang, acts: true as boolean | null, high: false };
   const form = h(
     'form',
-    { class: 'stack' },
-    h(
+    { class: 'guide-split' },
+    card(
+      t('Matter details'),
+      h(
       'div',
       { class: 'form-grid' },
-      field({ label: t('Buyer’s name'), required: true, autocomplete: 'name', onInput: (v) => (state.buyerName = v) }),
+      field({ label: hasRole('lawyer') ? t('Buyer’s name') : t('Matter name (e.g. project and unit, or borrower)'), required: true, autocomplete: 'name', onInput: (v) => (state.buyerName = v) }),
       field({ label: t('Your file reference'), placeholder: t('optional'), onInput: (v) => (state.firmRef = v) }),
       field({ label: t('Buyer’s language for the report'), value: 'en', options: BUYER_LANGS.map((l) => [l, LANG_NAMES[l]]), onInput: (v) => (state.buyerLang = v as Lang), hint: t('The report is always issued in Greek and English as well.') }),
       field({ label: t('Buyer’s email'), type: 'email', autocomplete: 'email', onInput: (v) => (state.buyerEmail = v) }),
       field({ label: t('Buyer’s mobile (international format)'), type: 'tel', placeholder: '+44…', autocomplete: 'tel', onInput: (v) => (state.buyerPhone = v), inputmode: 'tel' }),
+      ),
+      { icon: 'folder' },
     ),
-    card(
+    h('div', { class: 'stack' }, card(
       t('Before you start'),
       h(
         'div',
@@ -112,7 +127,7 @@ export function newMatterView(): HTMLElement {
       ),
       { icon: 'shield' },
     ),
-    h('div', { class: 'row' }, h('button', { class: 'btn btn-primary', type: 'submit' }, icon('check', 18), t('Open matter')), h('a', { class: 'btn', href: '#/matters' }, t('Cancel'))),
+    h('div', { class: 'row' }, h('button', { class: 'btn btn-primary', type: 'submit' }, icon('check', 18), t('Open matter')), h('a', { class: 'btn', href: '#/matters' }, t('Cancel')))),
   );
   form.addEventListener('submit', async (e) => {
     e.preventDefault();

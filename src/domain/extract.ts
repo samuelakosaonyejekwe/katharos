@@ -213,6 +213,7 @@ export function parseCertificate(pages: PageText[], evidenceId: string, baseConf
       .replace(/\d{1,2}[./-]\d{1,2}[./-]\d{4}/g, ' ')
       .replace(reference ?? '\u0000', ' ');
     holder = fold(holder).match(LABEL_WORDS) ? removeLabelWords(holder) : holder;
+    holder = removeMatches(holder, /\S*(?:εξαλειφθ|εξαλειψη|ακυρωθ|released|discharged|cancell?ed|withdrawn)\S*/i);
     holder = holder.replace(/[|•·;:]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/[-–,.\s]+$/, '').slice(0, 120);
     encumbrances.push({
       id: randomId('e_'),
@@ -251,6 +252,17 @@ export function parseCertificate(pages: PageText[], evidenceId: string, baseConf
     handwrittenRegions: 0,
     confidence: Math.max(0, Math.min(1, Number(confidence.toFixed(2)))),
   };
+}
+
+/** Removes every match of a pattern (run on the accent-folded text) from the original string. */
+function removeMatches(s: string, rx: RegExp): string {
+  let out = s;
+  for (let i = 0; i < 6; i++) {
+    const m = fold(out).match(rx);
+    if (!m || m.index === undefined) break;
+    out = `${out.slice(0, m.index)} ${out.slice(m.index + m[0].length)}`;
+  }
+  return out;
 }
 
 function removeLabelWords(s: string): string {

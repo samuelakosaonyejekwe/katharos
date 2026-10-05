@@ -3,10 +3,11 @@ import { h, icon, mount, type Child } from '../core/dom';
 import { randomId, sha256Hex } from '../core/crypto';
 import { addWorkingDays, fmtDate, relTime, todayISO } from '../core/dates';
 import { getFile } from '../core/db';
+import { hasRole } from '../core/licence';
 import { locale, t, uiLang } from '../core/i18n';
 import { navigate, type RouteCtx } from '../core/router';
 import { settings } from '../core/settings';
-import { badge, card, confirmDialog, copyText, downloadBlob, dropZone, empty, field, kv, modal, progressBar, severityTone, spinner, tabs, toast, toggle } from '../core/ui';
+import { badge, bgrid, card, confirmDialog, copyText, downloadBlob, dropZone, empty, field, kv, modal, progressBar, severityTone, spinner, tabs, toast, toggle } from '../core/ui';
 import { appendEvent, verifyChain } from '../domain/audit';
 import { actor, addEvidence, deadlinesOf, deleteMatter, getMatter, saveMatter } from '../domain/matters';
 import { readCertificate, readContract } from '../domain/reader';
@@ -16,8 +17,7 @@ import { buildPack, packLink } from '../domain/share';
 import { findingText } from '../domain/text';
 import { BUYER_LANGS, RTL, STATUSES, type CertOrigin, type Certificate, type Decision, type EncumbranceKind, type Evidence, type EvidenceKind, type Finding, type Lang, type Matter, type MatterStatus, type SourceRef } from '../domain/types';
 import { aiAvailable, aiDraftAnswer, aiExplain } from '../integrations/ai';
-import { gatewayConfigured } from '../integrations/http';
-import { NEUTRAL, SUBJECT, mailLink, notifyBuyer, waLink } from '../integrations/messaging';
+import { NEUTRAL, SUBJECT, canSendEmail, canSendWhatsApp, mailLink, notifyBuyer, waLink } from '../integrations/messaging';
 import { renderPdfPage } from '../integrations/ocr';
 import { screenName } from '../integrations/screening';
 import { GLOSSARY, LANG_NAMES, msg, ui } from '../i18n/messages';
@@ -42,10 +42,10 @@ export async function matterView(ctx: RouteCtx): Promise<HTMLElement> {
       { id: 'documents', label: t('Documents'), count: m.evidence.length },
       { id: 'facts', label: t('Facts') },
       { id: 'findings', label: t('Findings'), count: pending || counts.red, tone: pending ? 'red' : counts.red ? 'red' : '' },
-      { id: 'report', label: t('Report & share') },
+      { id: 'report', label: hasRole('lawyer') ? t('Report & share') : t('Pre-check pack') },
       { id: 'deadlines', label: t('Deadlines') },
       { id: 'watch', label: t('Watch'), count: m.certificates.length },
-      { id: 'buyer', label: t('Buyer'), count: m.questions.filter((q) => !q.answer).length, tone: 'amber' },
+      ...(hasRole('lawyer') ? [{ id: 'buyer', label: t('Buyer'), count: m.questions.filter((q) => !q.answer).length, tone: 'amber' }] : []),
       { id: 'audit', label: t('Audit trail') },
     ];
     mount(
@@ -96,8 +96,12 @@ function nextSteps(m: Matter): { label: string; done: boolean; tab: Tab }[] {
     { label: t('Upload the draft contract (and Form A or C)'), done: m.evidence.some((e) => e.kind === 'contract'), tab: 'documents' },
     { label: t('Check the facts read from the documents'), done: Boolean(m.contract.signedOn || m.contract.sellers.length), tab: 'facts' },
     { label: t('Decide every red and amber finding'), done: Boolean(cert) && unreviewed(m).length === 0, tab: 'findings' },
-    { label: t('Issue the report in Greek, English and {lang}', { lang: LANG_NAMES[m.buyer.lang] }), done: Boolean(m.report), tab: 'report' },
-    { label: t('Share the report with the buyer'), done: m.events.some((e) => e.kind === 'buyer.shared'), tab: 'report' },
+    ...(hasRole('lawyer')
+      ? [
+          { label: t('Issue the report in Greek, English and {lang}', { lang: LANG_NAMES[m.buyer.lang] }), done: Boolean(m.report), tab: 'report' as Tab },
+          { label: t('Share the report with the buyer'), done: m.events.some((e) => e.kind === 'buyer.shared'), tab: 'report' as Tab },
+        ]
+      : [{ label: t('Export the pre-checked pack for the buyer’s lawyer'), done: m.events.some((e) => e.kind === 'matter.exported'), tab: 'report' as Tab }]),
     { label: deadline ? t('Fresh search before {what}', { what: fmtDate(deadline.due, locale()) }) : t('Fresh search before each payment and before deposit'), done: !deadline, tab: 'watch' },
     { label: t('Deposit the contract at the District Lands Office'), done: Boolean(m.contract.depositedOn), tab: 'facts' },
   ];
@@ -571,8 +575,9 @@ function facts(m: Matter, redraw: () => Promise<void>): HTMLElement {
         : h('p', { class: 'muted' }, t('No certificate read yet.')),
       { icon: 'shield' },
     ),
-    h('div', { class: 'row', style: { position: 'sticky', bottom: '76px', zIndex: 5 } }, h('button', { class: 'btn btn-primary', onclick: save }, icon('check', 18), t('Save and re-run checks'))),
+
     card(t('Matter settings'), h('div', { class: 'stack-sm' }, toggle(t('Firm acts only for the buyer'), m.actsOnlyForBuyer === true, set('independence', (v: boolean) => (m.actsOnlyForBuyer = v ? true : null))), toggle(t('High-value matter (always human-reviewed)'), m.valueBand === 'high', set('valueBand', (v: boolean) => (m.valueBand = v ? 'high' : 'standard'))), field({ label: t('Buyer’s report language'), value: m.buyer.lang, options: BUYER_LANGS.map((l) => [l, LANG_NAMES[l]]), onInput: set('buyerLang', (v: string) => (m.buyer.lang = v as Lang)) }), h('div', { class: 'form-grid' }, field({ label: t('Buyer email'), value: m.buyer.email, onInput: set('buyer', (v: string) => (m.buyer.email = v)) }), field({ label: t('Buyer mobile'), value: m.buyer.phone, onInput: set('buyer', (v: string) => (m.buyer.phone = v)) })), toggle(t('Buyer opted in to WhatsApp status messages'), m.buyer.whatsappOptIn, set('buyer', (v: boolean) => (m.buyer.whatsappOptIn = v)))), { icon: 'gear' }),
+    h('div', { class: 'save-bar' }, h('small', { class: 'muted', style: { marginInlineEnd: 'auto', alignSelf: 'center' } }, t('Every change is recorded in the audit trail.')), h('button', { class: 'btn btn-primary', onclick: save }, icon('check', 18), t('Save and re-run checks'))),
   );
 }
 
@@ -703,7 +708,7 @@ export function reportDoc(m: Matter, lang: Lang): HTMLElement {
     h(
       'div',
       { class: 'r-head' },
-      h('div', null, h('h1', null, ui('report', lang)), h('div', null, `${r.firm || '—'} · ${r.matterRef}`), h('div', { class: 'small' }, issued ? ui('issuedBy', lang, { name: issued.advocate, date: fmtDate(issued.issuedAt.slice(0, 10), locale()) }) : 'DRAFT — not issued')),
+      h('div', null, h('h1', null, ui('report', lang)), h('div', null, `${r.firm || '—'} · ${r.matterRef}`), h('div', { class: 'small' }, issued ? ui('issuedBy', lang, { name: issued.advocate, date: fmtDate(issued.issuedAt.slice(0, 10), locale()) }) : hasRole('lawyer') ? t('Draft — not issued') : t('Pre-check summary — not legal advice; for the buyer’s lawyer'))),
       h('div', { class: 'small', style: { textAlign: 'end' } }, LANG_NAMES[lang]),
     ),
     h('p', null, h('strong', null, `${ui('property', lang)}: `), r.property),
@@ -717,7 +722,33 @@ export function reportDoc(m: Matter, lang: Lang): HTMLElement {
   );
 }
 
+function precheck(m: Matter): HTMLElement {
+  let lang: Lang = m.buyer.lang;
+  const preview = h('div');
+  const draw = () => mount(preview, reportDoc(m, lang));
+  draw();
+  const sel = h('select', { style: { width: 'auto' }, 'aria-label': t('Preview language') }, BUYER_LANGS.map((l) => h('option', { value: l, selected: l === lang }, LANG_NAMES[l]))) as HTMLSelectElement;
+  sel.addEventListener('change', () => ((lang = sel.value as Lang), draw()));
+  return h(
+    'div',
+    { class: 'stack' },
+    h('div', { class: 'callout' }, icon('scale'), h('span', null, t('Only the advocate who acts for the buyer can issue a legal report. Your licence prepares a pre-checked pack: the documents, the facts read from them and every finding, encrypted and fingerprinted for the buyer’s lawyer or the bank.'))),
+    card(
+      t('Pre-checked pack'),
+      h(
+        'div',
+        { class: 'row' },
+        h('button', { class: 'btn btn-primary', onclick: () => exportMatter(m) }, icon('download', 16), t('Export encrypted pack')),
+        h('a', { class: 'btn', href: `#/matters/${m.id}/print?langs=${lang}`, target: '_blank' }, icon('printer', 16), t('Print pre-check summary')),
+      ),
+      { icon: 'layers', help: t('The receiving lawyer imports the pack in Settings → Import a matter file, with the password you send separately. Every file keeps its SHA-256 fingerprint.') },
+    ),
+    card(t('Preview'), h('div', { class: 'stack' }, sel, preview), { icon: 'eye' }),
+  );
+}
+
 async function report(m: Matter, redraw: () => Promise<void>): Promise<HTMLElement> {
+  if (!hasRole('lawyer')) return precheck(m);
   let lang: Lang = m.buyer.lang;
   const preview = h('div');
   const drawPreview = () => mount(preview, reportDoc(m, lang));
@@ -832,8 +863,8 @@ async function report(m: Matter, redraw: () => Promise<void>): Promise<HTMLEleme
                   h('a', { class: 'btn btn-sm', href: url, target: '_blank', rel: 'noopener' }, icon('eye', 16), t('Preview as buyer')),
                   m.buyer.phone ? h('a', { class: 'btn btn-sm', href: waLink(m.buyer.phone, `${neutral}\n${url}`), target: '_blank', rel: 'noopener' }, icon('message', 16), 'WhatsApp') : null,
                   m.buyer.email ? h('a', { class: 'btn btn-sm', href: mailLink(m.buyer.email, SUBJECT[m.buyer.lang], `${neutral}\n\n${url}`) }, icon('mail', 16), t('Email')) : null,
-                  gatewayConfigured() && m.buyer.email && settings().emailViaGateway ? h('button', { class: 'btn btn-sm', onclick: async () => toast(t('Email {r}', { r: await notifyBuyer('email', m.buyer.email, m.buyer.lang, url) }), 'ok') }, icon('mail', 16), t('Send via gateway')) : null,
-                  gatewayConfigured() && m.buyer.phone && m.buyer.whatsappOptIn && settings().whatsappEnabled ? h('button', { class: 'btn btn-sm', onclick: async () => toast(t('WhatsApp {r}', { r: await notifyBuyer('whatsapp', m.buyer.phone, m.buyer.lang) }), 'ok') }, icon('message', 16), t('WhatsApp template')) : null,
+                  canSendEmail() && m.buyer.email ? h('button', { class: 'btn btn-sm', onclick: async () => toast(t('Email {r}', { r: await notifyBuyer('email', m.buyer.email, m.buyer.lang, url) }), 'ok') }, icon('mail', 16), t('Send email now')) : null,
+                  canSendWhatsApp() && m.buyer.phone && m.buyer.whatsappOptIn ? h('button', { class: 'btn btn-sm', onclick: async () => toast(t('WhatsApp {r}', { r: await notifyBuyer('whatsapp', m.buyer.phone, m.buyer.lang) }), 'ok') }, icon('message', 16), t('WhatsApp template')) : null,
                   h('button', { class: 'btn btn-sm', onclick: () => downloadBlob(new Blob([url], { type: 'text/plain' }), `${m.matterRef}-buyer-link.txt`) }, icon('download', 16), t('Save link')),
                 ),
                 pin.value ? h('div', { class: 'callout warn' }, icon('key'), t('Send the PIN by a different channel (e.g. phone call or SMS).')) : null,
@@ -951,6 +982,9 @@ function buyerTab(m: Matter, redraw: () => Promise<void>): HTMLElement {
   return h(
     'div',
     { class: 'stack' },
+    h(
+      'div',
+      { class: 'columns' },
     card(
       t('Buyer’s questions'),
       h(
@@ -1065,7 +1099,8 @@ function buyerTab(m: Matter, redraw: () => Promise<void>): HTMLElement {
       ),
       { icon: 'users' },
     ),
-    card(t('Glossary sent with the report'), h('div', null, GLOSSARY.map((g) => h('div', { class: 'term' }, h('strong', null, g.tr[fl()] ?? g.tr.en), ' ', h('span', { class: 'el' }, g.el), h('div', { class: 'muted' }, g.def[fl()] ?? g.def.en)))), { icon: 'book' }),
+    ),
+    card(t('Glossary sent with the report'), bgrid(GLOSSARY.map((g) => h('div', { class: 'glance-item' }, h('strong', { style: { fontSize: '1rem' } }, g.tr[fl()] ?? g.tr.en), h('span', { class: 'el muted' }, g.el), h('small', null, g.def[fl()] ?? g.def.en)))), { icon: 'book' }),
   );
 }
 

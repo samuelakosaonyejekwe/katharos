@@ -3,7 +3,7 @@
 import { h, icon, mount } from '../core/dom';
 import { relTime } from '../core/dates';
 import { num, t } from '../core/i18n';
-import { badge, card, field, spinner } from '../core/ui';
+import { badge, card, field, spinner, toast } from '../core/ui';
 import { FEEDS, onFeed, readFeed, refreshAll, refreshFeed, type FeedId, type FeedState, type FxData, type HpiData, type NewsItem } from '../integrations/feeds';
 import { pageHead, sparkline } from './common';
 
@@ -102,9 +102,13 @@ export async function liveView(): Promise<HTMLElement> {
         'aria-label': t('Refresh'),
         onclick: async (e: Event) => {
           const b = e.currentTarget as HTMLButtonElement;
+          if (!navigator.onLine) return toast(t('You are offline — showing the last saved data.'), 'warn');
           b.disabled = true;
-          await refreshFeed(id, true);
+          b.classList.add('busy');
+          const st = await refreshFeed(id, true);
           b.disabled = false;
+          b.classList.remove('busy');
+          toast(st.error ? t('Could not refresh {f} — showing the last saved copy', { f: t(FEEDS[id].title) }) : t('{f} updated', { f: t(FEEDS[id].title) }), st.error ? 'warn' : 'ok');
         },
       },
       icon('refresh', 16),
@@ -126,7 +130,26 @@ export async function liveView(): Promise<HTMLElement> {
     pageHead(
       t('Live market'),
       t('Fetched by this device straight from public sources — no central server — refreshed every few minutes while open and in the background where your browser allows. The last good copy stays available offline.'),
-      h('button', { class: 'btn', onclick: () => void refreshAll(true) }, icon('refresh', 18), t('Refresh all')),
+      h(
+        'button',
+        {
+          class: 'btn',
+          onclick: async (e: Event) => {
+            const b = e.currentTarget as HTMLButtonElement;
+            if (!navigator.onLine) return toast(t('You are offline — showing the last saved data.'), 'warn');
+            b.disabled = true;
+            b.classList.add('busy');
+            const { ok, failed } = await refreshAll(true);
+            b.disabled = false;
+            b.classList.remove('busy');
+            await Promise.all([drawFx(), drawHpi(), drawNews()]);
+            if (!failed.length) toast(t('All {n} live sources updated', { n: ok }), 'ok');
+            else toast(t('{ok} updated · still showing saved data for: {list}', { ok, list: failed.map((x) => t(x)).join(', ') }), 'warn', 7000);
+          },
+        },
+        icon('refresh', 18),
+        t('Refresh all'),
+      ),
     ),
     h('div', { class: 'grid-2' }, hpiHost, fxHost),
     newsHost,

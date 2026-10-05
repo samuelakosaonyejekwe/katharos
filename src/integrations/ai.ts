@@ -20,6 +20,7 @@ type Msg = Anthropic.Message;
 
 export function aiAvailable(): boolean {
   const s = settings();
+  if (s.aiMode === 'bedrock') return Boolean(s.bedrockApiKey);
   if (s.aiMode === 'gateway') return gatewayConfigured();
   if (s.aiMode === 'direct') return Boolean(s.anthropicKey);
   return false;
@@ -43,8 +44,24 @@ function retryable(e: unknown): boolean {
   return status === undefined || status === 429 || status === 529 || status >= 500;
 }
 
+let bedrockClient: { client: { messages: Anthropic['messages'] }; sig: string } | null = null;
+
+/** The organisation's own Bedrock account, called from this browser in an EU region — no server in between. */
+async function bedrock(): Promise<{ messages: Anthropic['messages'] }> {
+  const s = settings();
+  const sig = `${s.bedrockRegion}|${s.bedrockApiKey}`;
+  if (!bedrockClient || bedrockClient.sig !== sig) {
+    const { AnthropicBedrockMantle } = await import('@anthropic-ai/bedrock-sdk');
+    const client = new AnthropicBedrockMantle({ awsRegion: s.bedrockRegion, apiKey: s.bedrockApiKey, dangerouslyAllowBrowser: true, maxRetries: 2, timeout: 240_000 } as never);
+    bedrockClient = { client: client as unknown as { messages: Anthropic['messages'] }, sig };
+  }
+  return bedrockClient.client;
+}
+
 async function send(params: Params): Promise<Msg> {
-  if (settings().aiMode === 'gateway') return gateway<Msg>('/v1/messages', params, { timeoutMs: 240_000 });
+  const mode = settings().aiMode;
+  if (mode === 'bedrock') return (await bedrock()).messages.create({ ...params, model: `anthropic.${params.model.replace(/^(eu\.|global\.)?anthropic\./, '')}` }) as Promise<Msg>;
+  if (mode === 'gateway') return gateway<Msg>('/v1/messages', params, { timeoutMs: 240_000 });
   return (await direct()).messages.create(params);
 }
 
@@ -63,6 +80,8 @@ async function create(params: Omit<Params, 'model'>): Promise<Msg> {
       return res;
     } catch (e) {
       last = e;
+      const status = (e as { status?: number })?.status;
+      if (status === 401 || status === 403) throw new Error(`The AI provider rejected the key (HTTP ${status}). Check the key, the region and that Claude model access is enabled.`);
       if (!retryable(e)) throw e;
     }
   }

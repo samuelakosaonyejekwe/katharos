@@ -5,6 +5,7 @@ import { t, setUiLang, uiLang } from '../core/i18n';
 import { vault, wipeEverything } from '../core/db';
 import { confirmDialog, spinner, toggle } from '../core/ui';
 import { showInstallHelp } from './install';
+import { passkeyEnrolled, verifyPasskey } from '../core/passkey';
 import { ALL_LANGS, type Lang } from '../domain/types';
 import { LANG_NAMES } from '../i18n/langs';
 
@@ -102,6 +103,22 @@ function renderUnlock(root: HTMLElement, done: (firstRun: boolean, seedDemo: boo
     btn.disabled = true;
     mount(btn, spinner(t('Unlocking…')));
     const ok = await vault.unlock(pass.value);
+    if (ok && (await passkeyEnrolled())) {
+      // Second factor: the passkey enrolled on this device.
+      mount(btn, spinner(t('Confirm with your passkey…')));
+      let passed = false;
+      try {
+        passed = await verifyPasskey();
+      } catch {
+        passed = false;
+      }
+      if (passed) return done(false, false);
+      vault.lock();
+      btn.disabled = false;
+      mount(btn, icon('unlock', 18), t('Unlock'));
+      msg.textContent = t('The passkey check did not succeed. Try again.');
+      return;
+    }
     if (ok) return done(false, false);
     attempts++;
     // Slow down repeated guesses on this device.

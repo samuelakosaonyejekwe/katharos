@@ -235,7 +235,9 @@ export async function readFeed<T>(id: FeedId): Promise<FeedState<T>> {
 /** Fetches a feed now, trying each source in turn, then the firm's gateway; keeps the last good copy on failure. */
 export function refreshFeed<T>(id: FeedId, force = false): Promise<FeedState<T>> {
   const running = inflight.get(id);
-  if (running) return running as Promise<FeedState<T>>;
+  // A forced refresh never settles for an automatic run that may have skipped a fresh-enough feed.
+  if (running && !force) return running as Promise<FeedState<T>>;
+  if (running && force) return running.catch(() => undefined).then(() => refreshFeed<T>(id, true));
   const p = (async () => {
     const def = FEEDS[id] as unknown as FeedDef<T>;
     const prev = await readFeed<T>(id);
@@ -277,8 +279,19 @@ export function refreshFeed<T>(id: FeedId, force = false): Promise<FeedState<T>>
   return p;
 }
 
-export async function refreshAll(force = false): Promise<void> {
-  await Promise.allSettled((Object.keys(FEEDS) as FeedId[]).map((id) => refreshFeed(id, force)));
+/** Refreshes every feed; returns how many now hold fresh data and which ones failed. */
+export async function refreshAll(force = false): Promise<{ ok: number; failed: string[] }> {
+  const ids = Object.keys(FEEDS) as FeedId[];
+  const started = Date.now();
+  const results = await Promise.allSettled(ids.map((id) => refreshFeed(id, force)));
+  const failed: string[] = [];
+  let ok = 0;
+  results.forEach((r, i) => {
+    const st = r.status === 'fulfilled' ? r.value : null;
+    if (st && st.data && (!force || (st.fetchedAt ?? 0) >= started) && !st.error) ok++;
+    else failed.push(FEEDS[ids[i]].title);
+  });
+  return { ok, failed };
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;

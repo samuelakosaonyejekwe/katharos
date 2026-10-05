@@ -2,7 +2,7 @@
 // in plain browser storage, and never in the code or the repository.
 import { sealed } from './db';
 
-export type AiMode = 'off' | 'gateway' | 'direct';
+export type AiMode = 'off' | 'bedrock' | 'gateway' | 'direct';
 export type OcrMode = 'local' | 'gateway' | 'azure-direct';
 
 export interface Settings {
@@ -21,6 +21,8 @@ export interface Settings {
   aiModel: string;
   aiBackupModel: string;
   anthropicKey: string; // only for "direct" mode (processing outside the EU; see warning in the UI)
+  bedrockApiKey: string; // the organisation's own Amazon Bedrock API key — calls go from this browser to an EU region
+  bedrockRegion: string;
   // OCR
   ocrMode: OcrMode;
   azureEndpoint: string;
@@ -28,8 +30,14 @@ export interface Settings {
   // Screening (optional)
   openSanctionsKey: string;
   // Messaging
-  whatsappEnabled: boolean;
+  whatsappEnabled: boolean; // via gateway
   emailViaGateway: boolean;
+  waToken: string; // WhatsApp Cloud API, called directly from this browser
+  waPhoneId: string;
+  waTemplate: string;
+  brevoKey: string; // Brevo transactional email (EU), called directly from this browser
+  brevoSender: string;
+  brevoSenderName: string;
   // Rulebook
   legalPanel: string;
 }
@@ -48,12 +56,20 @@ export const DEFAULTS: Settings = {
   aiModel: 'claude-opus-5-5',
   aiBackupModel: 'claude-sonnet-5-5',
   anthropicKey: '',
+  bedrockApiKey: '',
+  bedrockRegion: 'eu-central-1',
   ocrMode: 'local',
   azureEndpoint: '',
   azureKey: '',
   openSanctionsKey: '',
   whatsappEnabled: false,
   emailViaGateway: false,
+  waToken: '',
+  waPhoneId: '',
+  waTemplate: 'katharos_status_update',
+  brevoKey: '',
+  brevoSender: '',
+  brevoSenderName: '',
   legalPanel: '',
 };
 

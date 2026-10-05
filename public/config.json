@@ -1,0 +1,13 @@
+{
+  "note": "Public settings for this copy of Katharos. Edit and push to change them; no rebuild needed.",
+  "checkout": {
+    "lawyer": "",
+    "developer": "",
+    "bank": ""
+  },
+  "lemonsqueezy": {
+    "storeId": null,
+    "variants": {}
+  },
+  "contact": ""
+}

@@ -58,7 +58,7 @@ function renderEmpty(root: HTMLElement): void {
   const input = h('input', { type: 'url', placeholder: 'https://…#/b/…', 'aria-label': 'Link' }) as HTMLInputElement;
   mount(
     root,
-    h('div', { class: 'portal-hero' }, h('h1', null, ui('portal', lang)), h('small', null, ui('notAdvice', lang))),
+    h('div', { class: 'portal-hero' }, h('a', { class: 'icon-btn back-btn', href: '#/', 'aria-label': 'Katharos', style: { color: '#fff' } }, icon('arrowLeft')), h('h1', null, ui('portal', lang)), h('small', null, ui('notAdvice', lang))),
     h('div', { class: 'card card-body stack-sm' }, input, h('button', { class: 'btn btn-primary', onclick: () => { const m = input.value.match(/#\/b\/(.+)$/); if (m) location.hash = `#/b/${m[1]}`; } }, ui('open', lang))),
     savedLinks().length ? h('div', { class: 'card card-body' }, h('div', { class: 'list' }, savedLinks().map((l) => h('a', { class: 'list-item', href: `#/b/${l.token}` }, icon('file', 18), h('div', { class: 'grow' }, h('div', { class: 'title' }, l.ref), h('small', { class: 'muted' }, fmtDate(l.at.slice(0, 10)))))))) : null,
   );
@@ -125,7 +125,7 @@ function renderPack(root: HTMLElement, pack: BuyerPack, token: string): void {
       h(
         'div',
         { class: 'portal-hero' },
-        h('div', { class: 'row-between' }, h('small', null, pack.firm || 'Katharos'), langSel),
+        h('div', { class: 'row-between' }, h('div', { class: 'row' }, h('a', { class: 'icon-btn back-btn', href: '#/', title: 'Katharos', 'aria-label': 'Katharos', style: { color: '#fff' } }, icon('arrowLeft')), h('small', null, pack.firm || 'Katharos')), langSel),
         h('h1', { style: { margin: '4px 0' } }, ui('portal', lang)),
         h('div', null, pack.property),
         pack.issuedAt ? h('small', null, ui('issuedBy', lang, { name: pack.advocate.name, date: fmtDate(pack.issuedAt.slice(0, 10)) })) : null,

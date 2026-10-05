@@ -1,6 +1,7 @@
 import { h, icon, mount } from '../core/dom';
 import { exportVault, openExport, restoreVault } from '../core/backup';
-import { activeLicence } from '../core/licence';
+import { activeLicence, ROLE_LABEL } from '../core/licence';
+import { enrolPasskey, passkeyEnrolled, passkeysSupported, removePasskey, verifyPasskey } from '../core/passkey';
 import { passphraseScore } from '../core/crypto';
 import { storageEstimate, vault, wipeEverything } from '../core/db';
 import { t } from '../core/i18n';
@@ -120,6 +121,36 @@ export async function settingsView(): Promise<HTMLElement> {
     onInput: applyTheme,
   });
 
+  const passkeyRow = h('div');
+  const drawPasskey = async () => {
+    if (!passkeysSupported()) return mount(passkeyRow, h('small', { class: 'muted' }, t('Passkeys are not available in this browser.')));
+    const on = await passkeyEnrolled();
+    mount(
+      passkeyRow,
+      toggle(
+        t('Require a passkey to unlock (two-factor)'),
+        on,
+        async (v) => {
+          try {
+            if (v) {
+              await enrolPasskey();
+              toast(t('Passkey added — it will be asked for after your passphrase'), 'ok');
+            } else {
+              if (!(await verifyPasskey())) throw new Error(t('The passkey check did not succeed. Try again.'));
+              await removePasskey();
+              toast(t('Passkey removed'), 'ok');
+            }
+          } catch (e) {
+            toast((e as Error).message, 'error');
+          }
+          await drawPasskey();
+        },
+        t('Fingerprint, face, device PIN or a security key, on top of your passphrase.'),
+      ),
+    );
+  };
+  void drawPasskey();
+
   const security = card(
     t('Security'),
     h(
@@ -161,6 +192,7 @@ export async function settingsView(): Promise<HTMLElement> {
         ),
         h('button', { class: 'btn', onclick: () => vault.lock() }, icon('lock', 16), t('Lock now')),
       ),
+      passkeyRow,
       kv([
         [t('Encryption'), 'AES-256-GCM · PBKDF2-SHA-256 600,000'],
         [t('Where data lives'), t('This device only (IndexedDB), encrypted')],
@@ -264,8 +296,8 @@ export async function settingsView(): Promise<HTMLElement> {
   const lic = await activeLicence();
   const licence = card(
     t('Licence'),
-    h('div', { class: 'stack-sm' }, kv([[t('Licensed to'), lic?.firm ?? '—'], [t('Valid until'), lic?.exp ?? t('No expiry date.')], [t('Licence ID'), h('code', null, lic?.id ?? '—')]]), h('a', { class: 'btn btn-sm', href: '#/firm' }, icon('key', 14), t('Manage licence'))),
+    h('div', { class: 'stack-sm' }, kv([[t('Licensed to'), lic?.holder || '—'], [t('Plan'), lic ? lic.roles.map((r) => t(ROLE_LABEL[r])).join(', ') : '—'], [t('Valid until'), lic?.exp ?? t('No expiry date.')], [t('Licence ID'), h('code', null, lic?.id || '—')]]), h('a', { class: 'btn btn-sm', href: '#/firm' }, icon('key', 14), t('Manage licence'))),
     { icon: 'key' },
   );
-  return h('div', { class: 'stack' }, pageHead(t('Settings')), h('div', { class: 'grid-2' }, profile, security, backup, device, licence), danger, h('div', null, toggle(t('Show advanced integration settings'), false, (v) => v && navigate('/integrations'))));
+  return h('div', { class: 'stack' }, pageHead(t('Settings')), h('div', { class: 'columns' }, h('div', { class: 'stack' }, profile, backup, licence), h('div', { class: 'stack' }, security, device)), danger);
 }

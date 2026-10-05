@@ -2,13 +2,13 @@
 import { h, icon } from '../core/dom';
 import { t } from '../core/i18n';
 import { canPromptInstall, isStandalone, platform, promptInstall } from '../core/pwa';
-import { modal, toast } from '../core/ui';
+import { bgrid, modal, toast } from '../core/ui';
 
 function steps(list: string[]): HTMLElement {
   return h('ol', { class: 'install-steps' }, list.map((s) => h('li', null, h('span', null, s))));
 }
 
-export function installInstructions(): HTMLElement {
+export function installBlocks(): { current: [string, string[]]; others: [string, string[]][] } {
   const p = platform();
   const blocks: Record<string, [string, string[]]> = {
     ios: [t('iPhone and iPad'), [t('Open this page in Safari (on iOS 16.4+ Chrome, Edge and Firefox work too).'), t('Tap the Share button (square with an arrow).'), t('Choose “Add to Home Screen”, then “Add”.'), t('Open Katharos from your home screen — it runs full-screen and works offline.')]],
@@ -18,8 +18,30 @@ export function installInstructions(): HTMLElement {
     firefox: [t('Firefox'), [t('On Android: menu (⋮) → “Install”.'), t('On desktop: open this page in Chrome, Edge or Safari to install it, or keep it as a pinned tab — it still works offline after the first visit.')]],
     other: [t('Your browser'), [t('Open the browser menu and look for “Install app” or “Add to Home screen”.'), t('If there is none, bookmark this page — it still works offline after the first visit.')]],
   };
-  const [title, list] = blocks[p] ?? blocks.other;
-  const others = Object.entries(blocks).filter(([k]) => k !== p && k !== 'other');
+  return { current: blocks[p] ?? blocks.other, others: Object.entries(blocks).filter(([k]) => k !== p && k !== 'other').map(([, v]) => v) };
+}
+
+/** Wide layout for the guide: this device on the left, every other device in a grid. */
+export function installWide(): HTMLElement {
+  const { current, others } = installBlocks();
+  return h(
+    'div',
+    { class: 'stack' },
+    isStandalone() ? h('div', { class: 'callout ok' }, icon('check'), t('Katharos is installed and running as an app on this device.')) : null,
+    h(
+      'div',
+      { class: 'guide-split' },
+      h('section', { class: 'card card-body stack-sm' }, h('h3', null, icon('phone', 18), ' ', current[0]), steps(current[1]), canPromptInstall() ? h('button', { class: 'btn btn-primary', onclick: () => void promptInstall() }, icon('install', 18), t('Install app')) : null),
+      h('section', { class: 'card card-body stack-sm' }, h('h3', null, icon('wifiOff', 18), ' ', t('Works in airplane mode.')), h('p', null, t('After the first visit everything — matters, documents, checks, reports, deadlines and the Greek OCR pack once cached — runs from this device with no connection.'))),
+    ),
+    bgrid(others.map(([tt, l]) => h('section', { class: 'card card-body stack-sm' }, h('strong', null, tt), steps(l)))),
+  );
+}
+
+export function installInstructions(): HTMLElement {
+  const { current, others: rest } = installBlocks();
+  const [title, list] = current;
+  const others = rest.map((v, i) => [String(i), v] as const);
   return h(
     'div',
     { class: 'stack' },

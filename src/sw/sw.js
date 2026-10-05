@@ -113,6 +113,22 @@ self.addEventListener('fetch', (event) => {
   if (url.origin === self.location.origin) {
     // version.json must always come from the network so update checks see the truth.
     if (url.pathname.endsWith('/version.json')) return;
+    // Operator-editable settings: network first so changes apply at once, cached copy offline.
+    if (/\/(config|mirrors)\.json$/.test(url.pathname)) {
+      event.respondWith(
+        (async () => {
+          const cache = await caches.open(SHELL);
+          try {
+            const res = await Promise.race([fetch(req, { cache: 'no-store' }), timeout(5000)]);
+            if (res.ok) cache.put(req, res.clone());
+            return res;
+          } catch {
+            return (await caches.match(req, { ignoreSearch: true })) || Response.error();
+          }
+        })(),
+      );
+      return;
+    }
     event.respondWith(
       (async () => {
         const hit = (await caches.match(req, { ignoreSearch: true }));

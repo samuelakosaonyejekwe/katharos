@@ -3,6 +3,7 @@ import { h, icon, mount } from './core/dom';
 import { onUiLang, setUiLang, t, uiLang } from './core/i18n';
 import { applyUpdate, isStandalone, onPwa, pwa } from './core/pwa';
 import { current, match } from './core/router';
+import { canGoBack, goBack } from './core/nav';
 import { vault } from './core/db';
 import { toast } from './core/ui';
 import { showInstallHelp } from './views/install';
@@ -26,6 +27,7 @@ let navHost: HTMLElement;
 let tabHost: HTMLElement;
 let topActions: HTMLElement;
 let sideFoot: HTMLElement;
+let backBtn: HTMLElement;
 let brandSub: HTMLElement;
 let renderSeq = 0;
 
@@ -82,6 +84,7 @@ export async function renderRoute(): Promise<void> {
   const seq = ++renderSeq;
   const { path, query } = current();
   renderNav();
+  backBtn.hidden = !canGoBack();
   const m = match(path);
   if (!m) {
     mount(content, h('div', { class: 'empty' }, h('h3', null, t('Page not found')), h('a', { href: '#/desk', class: 'btn' }, t('Go to dashboard'))));
@@ -107,6 +110,7 @@ export function renderShell(root: HTMLElement): void {
   tabHost = h('nav', { class: 'tabbar', 'aria-label': t('Main') });
   content = h('main', { class: 'content', id: 'content', tabindex: -1 });
   titleEl = h('div', { class: 'title' }, 'Katharos');
+  backBtn = h('button', { class: 'icon-btn back-btn', title: t('Back'), 'aria-label': t('Back'), onclick: () => goBack() }, icon('arrowLeft'));
   bannerHost = h('div');
   topActions = h('div', { class: 'row', style: { gap: '6px', flexWrap: 'nowrap' } });
   sideFoot = h('div', { class: 'sidebar-foot' });
@@ -127,7 +131,7 @@ export function renderShell(root: HTMLElement): void {
       h(
         'div',
         { class: 'main' },
-        h('header', { class: 'topbar' }, h('a', { class: 'mobile-brand', href: '#/desk', 'aria-label': 'Katharos' }, h('img', { src: './icons/icon.svg', alt: '' })), titleEl, h('div', { class: 'spacer' }), topActions),
+        h('header', { class: 'topbar' }, h('a', { class: 'mobile-brand', href: '#/desk', 'aria-label': 'Katharos' }, h('img', { src: './icons/icon.svg', alt: '' })), backBtn, titleEl, h('div', { class: 'spacer' }), topActions),
         bannerHost,
         content,
       ),

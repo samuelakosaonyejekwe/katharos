@@ -19,7 +19,12 @@ function applyProps(el: Element, props: Props): void {
   for (const [k, v] of Object.entries(props)) {
     if (v === undefined || v === null || v === false) continue;
     if (k === 'class' || k === 'className') el.setAttribute('class', String(v));
-    else if (k === 'style' && typeof v === 'object') Object.assign((el as HTMLElement).style, v);
+    else if (k === 'style' && typeof v === 'object') {
+      for (const [prop, val] of Object.entries(v as Record<string, string>)) {
+        if (prop.startsWith('--')) (el as HTMLElement).style.setProperty(prop, val);
+        else ((el as HTMLElement).style as unknown as Record<string, string>)[prop] = val;
+      }
+    }
     else if (k === 'dataset' && typeof v === 'object') Object.assign((el as HTMLElement).dataset, v);
     else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v as EventListener);
     else if (k === 'value' && 'value' in el) (el as HTMLInputElement).value = String(v);
