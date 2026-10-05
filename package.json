@@ -1,0 +1,25 @@
+{
+  "name": "katharos-title-desk",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Katharos Title Desk — Cypriot conveyancing due-diligence workbench, buyer portal and live market watch. Installable, offline-first.",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/vendor.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "strings": "node scripts/extract-strings.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "pdfjs-dist": "^5.6.205",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^4.1.11"
+  }
+}

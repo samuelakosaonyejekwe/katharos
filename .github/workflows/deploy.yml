@@ -1,0 +1,76 @@
+# Builds, tests and publishes the app. One push fans out to every configured host, so the app
+# stays reachable if any single host is down. Deploys upload build artifacts only — this workflow
+# never commits to the repository.
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist
+
+  github-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  cloudflare-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ vars.CLOUDFLARE_PROJECT != '' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: dist
+      - run: npx --yes wrangler@4 pages deploy dist --project-name "${{ vars.CLOUDFLARE_PROJECT }}" --branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  netlify:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ vars.NETLIFY_SITE_ID != '' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: dist
+      - run: npx --yes netlify-cli@17 deploy --dir dist --prod --site "${{ vars.NETLIFY_SITE_ID }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}

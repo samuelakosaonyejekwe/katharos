@@ -1,0 +1,9 @@
+{
+  "note": "Every copy below serves the identical build. If one host is down, open another; an installed app keeps running from the device even if all hosts are down.",
+  "mirrors": [
+    {
+      "name": "GitHub Pages",
+      "url": "https://samuelakosaonyejekwe.github.io/katharos/"
+    }
+  ]
+}

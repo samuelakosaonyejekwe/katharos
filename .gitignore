@@ -1,0 +1,9 @@
+node_modules/
+dist/
+gateway/node_modules/
+gateway/*.zip
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
